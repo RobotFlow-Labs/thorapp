@@ -11,4 +11,4 @@ fi
 
 # Start THOR agent as jetson user
 echo "[entrypoint] Starting THOR Agent on port 8470..."
-exec su - jetson -c "python3 /opt/thor-agent/main.py"
+exec su - jetson -c "THOR_AGENT_HOST=0.0.0.0 python3 /opt/thor-agent/main.py"
