@@ -5,12 +5,25 @@ struct DeviceDetailView: View {
     let device: Device
     @Environment(AppState.self) private var appState
     @State private var latestSnapshot: CompatibilitySnapshot?
+    @State private var metrics: AgentMetricsResponse?
+    @State private var isConnecting = false
+    @State private var errorMessage: String?
+
+    private var isConnected: Bool {
+        appState.connectionStatus(for: device.id ?? 0) == .connected
+    }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 deviceHeader
+                if let errorMessage {
+                    errorBanner(errorMessage)
+                }
                 connectionCard
+                if isConnected {
+                    metricsCard
+                }
                 capabilitiesCard
                 quickActions
             }
@@ -19,6 +32,9 @@ struct DeviceDetailView: View {
         .navigationTitle(device.displayName)
         .task(id: device.id) {
             await loadSnapshot()
+            if isConnected {
+                await refreshMetrics()
+            }
         }
     }
 
@@ -54,12 +70,32 @@ struct DeviceDetailView: View {
             Circle()
                 .fill(statusColor(for: status))
                 .frame(width: 8, height: 8)
-            Text(status.rawValue.replacingOccurrences(of: "_", with: " ").capitalized)
+            Text(statusLabel(for: status))
                 .font(.system(size: 13, weight: .medium))
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
         .background(Color(.secondarySystemFill))
+        .clipShape(.rect(cornerRadius: 8))
+    }
+
+    // MARK: - Error Banner
+
+    private func errorBanner(_ message: String) -> some View {
+        HStack {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(.orange)
+            Text(message)
+                .font(.system(size: 13))
+            Spacer()
+            Button("Dismiss") {
+                errorMessage = nil
+            }
+            .buttonStyle(.plain)
+            .font(.system(size: 12))
+        }
+        .padding(12)
+        .background(Color.orange.opacity(0.1))
         .clipShape(.rect(cornerRadius: 8))
     }
 
@@ -73,6 +109,55 @@ struct DeviceDetailView: View {
                 infoRow("IP", value: device.lastKnownIP ?? "Unknown")
                 Divider().padding(.leading, 16)
                 infoRow("Environment", value: device.environment.rawValue.capitalized)
+                Divider().padding(.leading, 16)
+                infoRow("Status", value: statusLabel(for: appState.connectionStatus(for: device.id ?? 0)))
+            }
+        }
+    }
+
+    // MARK: - Metrics Card
+
+    private var metricsCard: some View {
+        GroupBox("System Metrics") {
+            if let m = metrics {
+                VStack(spacing: 0) {
+                    metricRow("CPU", value: String(format: "%.1f%%", m.cpu.percent), icon: "cpu")
+                    Divider().padding(.leading, 16)
+                    metricRow(
+                        "Memory",
+                        value: "\(m.memory.usedMb) / \(m.memory.totalMb) MB (\(String(format: "%.0f%%", m.memory.percent)))",
+                        icon: "memorychip"
+                    )
+                    Divider().padding(.leading, 16)
+                    metricRow(
+                        "Disk",
+                        value: "\(String(format: "%.1f", m.disk.usedGb)) / \(String(format: "%.1f", m.disk.totalGb)) GB",
+                        icon: "internaldrive"
+                    )
+                    Divider().padding(.leading, 16)
+                    metricRow(
+                        "Load",
+                        value: m.cpu.loadAvg.map { String(format: "%.2f", $0) }.joined(separator: ", "),
+                        icon: "chart.bar"
+                    )
+                    if !m.temperatures.isEmpty {
+                        Divider().padding(.leading, 16)
+                        metricRow(
+                            "Temperature",
+                            value: m.temperatures.map { "\($0.key): \(String(format: "%.0f", $0.value))C" }.joined(separator: ", "),
+                            icon: "thermometer.medium"
+                        )
+                    }
+                }
+            } else {
+                HStack {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("Loading metrics...")
+                        .foregroundStyle(.secondary)
+                        .font(.system(size: 13))
+                }
+                .padding(12)
             }
         }
     }
@@ -98,8 +183,9 @@ struct DeviceDetailView: View {
                     infoRow("Support", value: snap.supportStatus.rawValue.replacingOccurrences(of: "_", with: " ").capitalized)
                 }
             } else {
-                Text("No capability data yet. Connect to fetch.")
+                Text("No capability data. Connect to the device to fetch.")
                     .foregroundStyle(.secondary)
+                    .font(.system(size: 13))
                     .padding(12)
             }
         }
@@ -110,12 +196,28 @@ struct DeviceDetailView: View {
     private var quickActions: some View {
         GroupBox("Quick Actions") {
             HStack(spacing: 12) {
-                actionButton("Connect", systemImage: "link", role: nil) {
-                    // TODO: Implement connection
+                if isConnected {
+                    actionButton("Refresh", systemImage: "arrow.clockwise", role: nil) {
+                        Task { await refreshMetrics() }
+                    }
+                    actionButton("Disconnect", systemImage: "xmark.circle", role: .destructive) {
+                        Task { await appState.disconnectDevice(device) }
+                    }
+                } else {
+                    Button {
+                        Task { await connectToDevice() }
+                    } label: {
+                        if isConnecting {
+                            ProgressView()
+                                .controlSize(.small)
+                        } else {
+                            Label("Connect", systemImage: "link")
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(isConnecting)
                 }
-                actionButton("Reboot", systemImage: "restart", role: .destructive) {
-                    // TODO: Implement reboot
-                }
+
                 actionButton("Copy IP", systemImage: "doc.on.doc", role: nil) {
                     if let ip = device.lastKnownIP {
                         NSPasteboard.general.clearContents()
@@ -144,6 +246,23 @@ struct DeviceDetailView: View {
         .padding(.vertical, 8)
     }
 
+    private func metricRow(_ label: String, value: String, icon: String) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: icon)
+                .frame(width: 20)
+                .foregroundStyle(.secondary)
+            Text(label)
+                .font(.system(size: 13))
+                .foregroundStyle(.secondary)
+                .frame(width: 80, alignment: .leading)
+            Text(value)
+                .font(.system(size: 13, design: .monospaced))
+            Spacer()
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+    }
+
     private func actionButton(
         _ title: String,
         systemImage: String,
@@ -166,8 +285,43 @@ struct DeviceDetailView: View {
         }
     }
 
+    private func statusLabel(for status: ConnectionStatus) -> String {
+        switch status {
+        case .connected: "Connected"
+        case .degraded: "Degraded"
+        case .disconnected: "Disconnected"
+        case .unreachable: "Unreachable"
+        case .authFailed: "Auth Failed"
+        case .hostKeyMismatch: "Host Key Mismatch"
+        case .unknown: "Unknown"
+        }
+    }
+
     private func loadSnapshot() async {
         guard let deviceID = device.id else { return }
         latestSnapshot = try? await appState.latestSnapshot(for: deviceID)
+    }
+
+    private func refreshMetrics() async {
+        guard let deviceID = device.id else { return }
+        metrics = try? await appState.fetchMetrics(for: deviceID)
+    }
+
+    private func connectToDevice() async {
+        isConnecting = true
+        errorMessage = nil
+        do {
+            // For Docker sims, connect directly
+            if device.hostname == "localhost" || device.hostname == "127.0.0.1" {
+                try await appState.connectDevice(device, directPort: 8470)
+            } else {
+                try await appState.connectDevice(device)
+            }
+            await loadSnapshot()
+            await refreshMetrics()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+        isConnecting = false
     }
 }

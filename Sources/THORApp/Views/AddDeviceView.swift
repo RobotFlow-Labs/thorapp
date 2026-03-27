@@ -100,6 +100,16 @@ struct AddDeviceView: View {
                 }
             }
 
+            // Auto-connect: try direct agent connection for Docker sims
+            if let saved = appState.devices.last {
+                let sshPort = Int(port) ?? 22
+                // For localhost, use the agent port directly (Docker port mapping)
+                if hostname == "localhost" || hostname == "127.0.0.1" {
+                    let agentPort = sshPort == 2222 ? 8470 : 8471
+                    try await appState.connectDevice(saved, directPort: agentPort)
+                }
+            }
+
             dismiss()
         } catch {
             errorMessage = error.localizedDescription

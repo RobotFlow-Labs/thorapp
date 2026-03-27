@@ -20,6 +20,7 @@ struct ContentView: View {
             do {
                 try appState.initializeDatabase()
                 try await appState.loadDevices()
+                appState.startHealthPolling()
             } catch {
                 print("Failed to initialize: \(error)")
             }

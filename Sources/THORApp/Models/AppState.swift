@@ -15,6 +15,8 @@ final class AppState {
     private(set) var db: DatabaseManager?
     let keychain = KeychainManager()
     let sshManager = SSHSessionManager()
+    private(set) var connector: DeviceConnector?
+    private var healthPollingTask: Task<Void, Never>?
 
     var selectedDevice: Device? {
         guard let id = selectedDeviceID else { return nil }
@@ -25,6 +27,7 @@ final class AppState {
 
     func initializeDatabase() throws {
         db = try DatabaseManager(path: DatabaseManager.defaultPath)
+        connector = DeviceConnector(appState: self)
     }
 
     // MARK: - Device CRUD
@@ -81,6 +84,35 @@ final class AppState {
 
     func connectionStatus(for deviceID: Int64) -> ConnectionStatus {
         connectionStates[deviceID]?.status ?? .unknown
+    }
+
+    // MARK: - Connect / Disconnect
+
+    func connectDevice(_ device: Device, directPort: Int? = nil) async throws {
+        guard let connector else { return }
+        if let port = directPort {
+            try await connector.connectDirect(device: device, agentPort: port)
+        } else {
+            try await connector.connect(device: device)
+        }
+    }
+
+    func disconnectDevice(_ device: Device) async {
+        guard let connector, let id = device.id else { return }
+        await connector.disconnect(deviceID: id)
+    }
+
+    func startHealthPolling() {
+        guard let connector else { return }
+        healthPollingTask?.cancel()
+        healthPollingTask = Task {
+            await connector.startHealthPolling()
+        }
+    }
+
+    func fetchMetrics(for deviceID: Int64) async throws -> AgentMetricsResponse? {
+        guard let connector else { return nil }
+        return try await connector.fetchMetrics(for: deviceID)
     }
 
     // MARK: - Snapshots
