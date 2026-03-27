@@ -1,0 +1,52 @@
+version: "3.8"
+
+services:
+  jetson-sim:
+    build:
+      context: .
+      dockerfile: Docker/Dockerfile.jetson-sim
+    container_name: thor-jetson-sim
+    hostname: jetson-thor-sim
+    ports:
+      - "2222:22"      # SSH
+      - "8470:8470"    # Agent API (for direct testing; normally tunneled)
+    volumes:
+      - jetson-data:/home/jetson
+      - ./Agent:/opt/thor-agent:ro
+    environment:
+      - THOR_SIM_MODEL=Jetson Thor
+      - THOR_SIM_JETPACK=6.1
+      - THOR_SIM_SERIAL=SIM-THOR-001
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8470/v1/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  jetson-orin-sim:
+    build:
+      context: .
+      dockerfile: Docker/Dockerfile.jetson-sim
+    container_name: thor-jetson-orin-sim
+    hostname: jetson-orin-sim
+    ports:
+      - "2223:22"
+      - "8471:8470"
+    volumes:
+      - orin-data:/home/jetson
+      - ./Agent:/opt/thor-agent:ro
+    environment:
+      - THOR_SIM_MODEL=Jetson Orin NX
+      - THOR_SIM_JETPACK=6.0
+      - THOR_SIM_SERIAL=SIM-ORIN-001
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8470/v1/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  jetson-data:
+  orin-data:

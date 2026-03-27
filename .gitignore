@@ -1,0 +1,50 @@
+# Claude Code local settings
+.claude/settings.local.json
+
+# macOS
+.DS_Store
+*.xcuserdata
+xcuserdata/
+*.xcworkspace/xcuserdata/
+DerivedData/
+build/
+*.pbxuser
+*.mode1v3
+*.mode2v3
+*.perspectivev3
+*.moved-aside
+
+# Swift
+.build/
+Packages/
+Package.resolved
+*.o
+*.swp
+
+# Python (Jetson agent)
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+.venv/
+venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Environment
+.env
+.env.local
+*.pem
+*.key
+# Also ignore build artifacts
+THORApp.app/
+Package.resolved

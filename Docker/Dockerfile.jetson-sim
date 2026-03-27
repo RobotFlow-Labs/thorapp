@@ -1,0 +1,55 @@
+FROM ubuntu:22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install SSH server and Python
+RUN apt-get update && apt-get install -y \
+    openssh-server \
+    python3 \
+    python3-pip \
+    python3-venv \
+    sudo \
+    curl \
+    systemctl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create jetson user
+RUN useradd -m -s /bin/bash jetson \
+    && echo "jetson:jetson" | chpasswd \
+    && usermod -aG sudo jetson \
+    && echo "jetson ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
+
+# Configure SSH
+RUN mkdir -p /var/run/sshd \
+    && sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin no/' /etc/ssh/sshd_config \
+    && sed -i 's/#PasswordAuthentication yes/PasswordAuthentication yes/' /etc/ssh/sshd_config \
+    && sed -i 's/#PubkeyAuthentication yes/PubkeyAuthentication yes/' /etc/ssh/sshd_config
+
+# Create .ssh directory for jetson user
+RUN mkdir -p /home/jetson/.ssh \
+    && chmod 700 /home/jetson/.ssh \
+    && chown -R jetson:jetson /home/jetson/.ssh
+
+# Install THOR agent dependencies
+RUN python3 -m pip install --break-system-packages \
+    fastapi \
+    uvicorn[standard] \
+    psutil
+
+# Copy agent code
+COPY agent/ /opt/thor-agent/
+RUN chown -R jetson:jetson /opt/thor-agent
+
+# Create fake Jetson identity files for simulation
+RUN mkdir -p /etc/thor-sim \
+    && echo '{"model": "Jetson Thor", "serial": "SIM-THOR-001", "jetpack": "6.1"}' \
+       > /etc/thor-sim/identity.json
+
+# SSH host keys will be generated on first start
+EXPOSE 22 8470
+
+# Start SSH + agent
+COPY Docker/entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+CMD ["/entrypoint.sh"]
