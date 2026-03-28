@@ -20,31 +20,20 @@ struct DeviceDetailView: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            // Grouped sidebar using List for proper selection
-            List(selection: $selectedTab) {
-                Section("DEVICE") {
-                    ForEach([DetailTab.overview, .system, .power, .hardware], id: \.self) { tab in
-                        Label(tab.label, systemImage: tab.icon).tag(tab)
-                    }
+            // Feature sidebar — plain VStack buttons for reliable click handling
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    sidebarGroup("DEVICE", [.overview, .system, .power, .hardware])
+                    sidebarGroup("RUNTIME", [.docker, .ros2, .anima])
+                    sidebarGroup("OPERATIONS", [.files, .deploy, .gpu])
+                    sidebarGroup("OBSERVE", [.logs, .history])
                 }
-                Section("RUNTIME") {
-                    ForEach([DetailTab.docker, .ros2, .anima], id: \.self) { tab in
-                        Label(tab.label, systemImage: tab.icon).tag(tab)
-                    }
-                }
-                Section("OPERATIONS") {
-                    ForEach([DetailTab.files, .deploy, .gpu], id: \.self) { tab in
-                        Label(tab.label, systemImage: tab.icon).tag(tab)
-                    }
-                }
-                Section("OBSERVE") {
-                    ForEach([DetailTab.logs, .history], id: \.self) { tab in
-                        Label(tab.label, systemImage: tab.icon).tag(tab)
-                    }
-                }
+                .padding(.vertical, 8)
             }
-            .listStyle(.sidebar)
-            .frame(width: 170)
+            .frame(width: 160)
+            .background(Color(.controlBackgroundColor))
+
+            Divider()
 
             // Content
             ScrollView {
@@ -90,7 +79,41 @@ struct DeviceDetailView: View {
         }
     }
 
-    // sidebarSection removed — using List with ForEach + .tag() for proper selection
+    private func sidebarGroup(_ title: String, _ items: [DetailTab]) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(title)
+                .font(.system(size: 10, weight: .bold))
+                .foregroundStyle(.tertiary)
+                .padding(.horizontal, 12)
+                .padding(.top, 10)
+                .padding(.bottom, 4)
+
+            ForEach(items, id: \.self) { tab in
+                Button {
+                    withAnimation(.easeInOut(duration: 0.15)) {
+                        selectedTab = tab
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: tab.icon)
+                            .font(.system(size: 12))
+                            .frame(width: 18)
+                            .foregroundStyle(selectedTab == tab ? .white : .secondary)
+                        Text(tab.label)
+                            .font(.system(size: 12, weight: selectedTab == tab ? .semibold : .regular))
+                            .foregroundStyle(selectedTab == tab ? .white : .primary)
+                        Spacer()
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(selectedTab == tab ? Color.accentColor : .clear)
+                    .clipShape(.rect(cornerRadius: 5))
+                    .padding(.horizontal, 4)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
 
     @ViewBuilder
     private var featureContent: some View {
