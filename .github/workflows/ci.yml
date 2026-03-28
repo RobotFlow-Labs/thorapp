@@ -1,0 +1,105 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-test:
+    name: Build & Test
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Swift toolchain
+        run: sudo xcode-select -s /Applications/Xcode_16.3.app/Contents/Developer
+
+      - name: Show Swift version
+        run: swift --version
+
+      - name: Resolve dependencies
+        run: swift package resolve
+
+      - name: Build (debug)
+        run: swift build
+
+      - name: Build (release)
+        run: swift build -c release
+
+      - name: Build CLI
+        run: swift build --product thorctl
+
+      # Note: Integration tests require Docker agent running.
+      # Run unit tests only in CI (DB + Pipeline Composer).
+      - name: Run unit tests
+        run: swift test --filter "DatabaseTests|PipelineComposerTests"
+
+      - name: Package .app bundle
+        run: SIGNING_MODE=adhoc Scripts/package_app.sh release
+
+      - name: Verify .app structure
+        run: |
+          test -f THORApp.app/Contents/MacOS/THORApp
+          test -f THORApp.app/Contents/Info.plist
+          file THORApp.app/Contents/MacOS/THORApp | grep -q "Mach-O"
+          codesign -dv THORApp.app 2>&1 | grep -q "com.robotflowlabs.thor"
+          echo "App bundle verified"
+
+      - name: Upload .app artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: THORApp-${{ github.sha }}
+          path: THORApp.app
+          retention-days: 7
+
+  integration-test:
+    name: Integration Tests (Docker)
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Swift toolchain
+        run: sudo xcode-select -s /Applications/Xcode_16.3.app/Contents/Developer
+
+      - name: Install Docker
+        run: brew install --cask docker || true
+
+      - name: Start Docker
+        run: |
+          open /Applications/Docker.app || true
+          # Wait for Docker to start
+          for i in $(seq 1 30); do
+            docker info >/dev/null 2>&1 && break
+            sleep 2
+          done
+
+      - name: Build Docker sims
+        run: docker compose build
+
+      - name: Start Jetson sims
+        run: docker compose up -d
+
+      - name: Wait for agents
+        run: |
+          for i in $(seq 1 15); do
+            curl -sf http://localhost:8470/v1/health >/dev/null 2>&1 && break
+            sleep 2
+          done
+          curl -sf http://localhost:8470/v1/health
+          curl -sf http://localhost:8471/v1/health
+
+      - name: Run all tests
+        run: swift test
+
+      - name: Test thorctl
+        run: |
+          swift run thorctl health 8470
+          swift run thorctl caps 8470
+          swift run thorctl modules 8470
+          swift run thorctl version
+
+      - name: Stop Docker sims
+        if: always()
+        run: docker compose down
