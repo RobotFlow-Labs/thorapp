@@ -8,7 +8,7 @@ struct DeviceDetailView: View {
     @State private var metrics: AgentMetricsResponse?
     @State private var isConnecting = false
     @State private var errorMessage: String?
-    @State private var selectedTab = DetailTab.overview
+    @State private var selectedTab: DetailTab? = .overview
     @State private var showingRebootConfirm = false
     @State private var showingExportDebug = false
     @State private var metricsTimer: Task<Void, Never>?
@@ -19,32 +19,32 @@ struct DeviceDetailView: View {
     }
 
     var body: some View {
-        HSplitView {
-            // Grouped sidebar
+        HStack(spacing: 0) {
+            // Grouped sidebar using List for proper selection
             List(selection: $selectedTab) {
                 Section("DEVICE") {
-                    sidebarItem(.overview)
-                    sidebarItem(.system)
-                    sidebarItem(.power)
-                    sidebarItem(.hardware)
+                    ForEach([DetailTab.overview, .system, .power, .hardware], id: \.self) { tab in
+                        Label(tab.label, systemImage: tab.icon).tag(tab)
+                    }
                 }
                 Section("RUNTIME") {
-                    sidebarItem(.docker)
-                    sidebarItem(.ros2)
-                    sidebarItem(.anima)
+                    ForEach([DetailTab.docker, .ros2, .anima], id: \.self) { tab in
+                        Label(tab.label, systemImage: tab.icon).tag(tab)
+                    }
                 }
                 Section("OPERATIONS") {
-                    sidebarItem(.files)
-                    sidebarItem(.deploy)
-                    sidebarItem(.gpu)
+                    ForEach([DetailTab.files, .deploy, .gpu], id: \.self) { tab in
+                        Label(tab.label, systemImage: tab.icon).tag(tab)
+                    }
                 }
                 Section("OBSERVE") {
-                    sidebarItem(.logs)
-                    sidebarItem(.history)
+                    ForEach([DetailTab.logs, .history], id: \.self) { tab in
+                        Label(tab.label, systemImage: tab.icon).tag(tab)
+                    }
                 }
             }
             .listStyle(.sidebar)
-            .frame(width: 160)
+            .frame(width: 170)
 
             // Content
             ScrollView {
@@ -90,14 +90,11 @@ struct DeviceDetailView: View {
         }
     }
 
-    private func sidebarItem(_ tab: DetailTab) -> some View {
-        Label(tab.label, systemImage: tab.icon)
-            .tag(tab)
-    }
+    // sidebarSection removed — using List with ForEach + .tag() for proper selection
 
     @ViewBuilder
     private var featureContent: some View {
-        switch selectedTab {
+        switch selectedTab ?? .overview {
         case .overview:
             deviceHeader
             if let errorMessage { errorBanner(errorMessage) }
