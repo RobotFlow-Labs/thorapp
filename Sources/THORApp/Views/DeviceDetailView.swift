@@ -35,6 +35,12 @@ struct DeviceDetailView: View {
                         }
                         capabilitiesCard
                         quickActions
+                    case .files:
+                        if isConnected {
+                            FileTransferView(device: device)
+                        } else {
+                            notConnectedPlaceholder
+                        }
                     case .docker:
                         if isConnected, let id = device.id {
                             DockerView(deviceID: id)
@@ -391,12 +397,14 @@ struct DeviceDetailView: View {
 
 private enum DetailTab: String, CaseIterable {
     case overview
+    case files
     case docker
     case logs
 
     var label: String {
         switch self {
         case .overview: "Overview"
+        case .files: "Files"
         case .docker: "Docker"
         case .logs: "Logs"
         }
@@ -405,6 +413,7 @@ private enum DetailTab: String, CaseIterable {
     var icon: String {
         switch self {
         case .overview: "cpu"
+        case .files: "arrow.up.doc"
         case .docker: "shippingbox"
         case .logs: "doc.text"
         }
