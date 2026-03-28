@@ -13,6 +13,7 @@ services:
     volumes:
       - jetson-data:/home/jetson
       - ./Agent:/opt/thor-agent:ro
+      - /var/run/docker.sock:/var/run/docker.sock  # Docker-in-Docker
     environment:
       - THOR_SIM_MODEL=Jetson Thor
       - THOR_SIM_JETPACK=6.1
@@ -36,6 +37,7 @@ services:
     volumes:
       - orin-data:/home/jetson
       - ./Agent:/opt/thor-agent:ro
+      - /var/run/docker.sock:/var/run/docker.sock
     environment:
       - THOR_SIM_MODEL=Jetson Orin NX
       - THOR_SIM_JETPACK=6.0

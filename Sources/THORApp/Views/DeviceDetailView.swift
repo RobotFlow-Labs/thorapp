@@ -78,6 +78,8 @@ struct DeviceDetailView: View {
                         } else {
                             notConnectedPlaceholder
                         }
+                    case .jetpack:
+                        JetPackView(device: device)
                     case .history:
                         if let id = device.id {
                             VStack(alignment: .leading, spacing: 16) {
@@ -91,6 +93,11 @@ struct DeviceDetailView: View {
             }
         }
         .navigationTitle(device.displayName)
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                TerminalToolbar(device: device)
+            }
+        }
         .task(id: device.id) {
             await loadSnapshot()
             if isConnected {
@@ -565,6 +572,7 @@ private enum DetailTab: String, CaseIterable {
     case files
     case deploy
     case ros2
+    case jetpack
     case docker
     case logs
     case history
@@ -576,6 +584,7 @@ private enum DetailTab: String, CaseIterable {
         case .files: "Files"
         case .deploy: "Deploy"
         case .ros2: "ROS2"
+        case .jetpack: "JetPack"
         case .docker: "Docker"
         case .logs: "Logs"
         case .history: "History"
@@ -589,6 +598,7 @@ private enum DetailTab: String, CaseIterable {
         case .files: "arrow.up.doc"
         case .deploy: "play.rectangle"
         case .ros2: "point.3.connected.trianglepath.dotted"
+        case .jetpack: "memorychip"
         case .docker: "shippingbox"
         case .logs: "doc.text"
         case .history: "clock.arrow.circlepath"

@@ -2,7 +2,7 @@ FROM ubuntu:22.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Minimal: SSH + Python + curl (for healthcheck)
+# Core: SSH + Python + curl + system tools
 RUN apt-get update && apt-get install -y --no-install-recommends \
     openssh-server \
     python3 \
@@ -10,26 +10,53 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     iproute2 \
     procps \
+    gnupg \
+    lsb-release \
+    software-properties-common \
+    ca-certificates \
+    sudo \
     && rm -rf /var/lib/apt/lists/*
 
-# Create jetson user with password auth
+# Install Docker CLI (for managing containers from inside the sim)
+RUN curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" \
+       > /etc/apt/sources.list.d/docker.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends docker-ce-cli docker-compose-plugin \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install ROS2 Humble (base — just CLI tools, no full desktop)
+RUN curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key | gpg --dearmor -o /usr/share/keyrings/ros-archive-keyring.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu $(lsb_release -cs) main" \
+       > /etc/apt/sources.list.d/ros2.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends ros-humble-ros-base python3-colcon-common-extensions \
+    && rm -rf /var/lib/apt/lists/*
+
+# ROS2 environment setup
+RUN echo "source /opt/ros/humble/setup.bash" >> /etc/bash.bashrc
+
+# Create jetson user with password auth + Docker group
 RUN useradd -m -s /bin/bash jetson \
     && echo "jetson:jetson" | chpasswd \
+    && usermod -aG sudo jetson \
+    && echo "jetson ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers \
     && mkdir -p /home/jetson/.ssh \
     && chmod 700 /home/jetson/.ssh \
     && chown -R jetson:jetson /home/jetson/.ssh
 
-# Configure SSH — allow password auth, no root login
+# Configure SSH
 RUN mkdir -p /var/run/sshd \
     && sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin no/' /etc/ssh/sshd_config \
     && sed -i 's/#PasswordAuthentication yes/PasswordAuthentication yes/' /etc/ssh/sshd_config \
     && sed -i 's/#PubkeyAuthentication yes/PubkeyAuthentication yes/' /etc/ssh/sshd_config
 
-# Install Python agent deps (minimal)
+# Install Python agent deps + PyYAML for manifest parsing
 RUN pip3 install --no-cache-dir \
     fastapi \
     'uvicorn[standard]' \
-    psutil
+    psutil \
+    pyyaml
 
 # Copy agent
 COPY Agent/ /opt/thor-agent/
@@ -39,6 +66,15 @@ RUN chown -R jetson:jetson /opt/thor-agent
 RUN mkdir -p /etc/thor-sim \
     && echo '{"model": "Jetson Thor", "serial": "SIM-THOR-001", "jetpack": "6.1"}' \
        > /etc/thor-sim/identity.json
+
+# Create sample ANIMA module manifests
+RUN mkdir -p /home/jetson/anima-modules/petra \
+    && echo 'schema_version: "1.0"\nmodule:\n  name: petra\n  version: "0.1.0"\n  display_name: PETRA\n  description: Foundation depth perception model\n  category: perception.depth\ncapabilities:\n  provides:\n    - type: depth_prediction\n      subtype: relative_depth\ninterface:\n  inputs:\n    - name: depth_image\n      ros2_type: sensor_msgs/msg/Image\n      encoding: ["32FC1"]\n      min_hz: 1\n  outputs:\n    - name: features\n      ros2_type: std_msgs/msg/Float32MultiArray\n      typical_hz: 10\nhardware:\n  platforms:\n    - name: jetson\n      backends: [tensorrt, cuda]\nperformance:\n  profiles:\n    - platform: jetson_tensorrt\n      model: petra-25m\n      backend: tensorrt\n      fps: 30\n      latency_p50_ms: 35\n      memory_mb: 512\nsafety:\n  failure_mode: returns_empty\n  timeout_ms: 5000\n  health_topic: /anima/petra/health\ncontainer:\n  image: "ghcr.io/aiflowlabs/anima-petra:0.1.0"' \
+       > /home/jetson/anima-modules/petra/anima_module.yaml \
+    && chown -R jetson:jetson /home/jetson/anima-modules
+
+# Add ROS2 sourcing for jetson user
+RUN echo "source /opt/ros/humble/setup.bash" >> /home/jetson/.bashrc
 
 EXPOSE 22 8470
 

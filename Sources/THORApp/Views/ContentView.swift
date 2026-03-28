@@ -10,8 +10,6 @@ struct ContentView: View {
         Group {
             if !onboardingComplete {
                 OnboardingView(isComplete: $onboardingComplete)
-            } else if showingFleet {
-                FleetView()
             } else {
                 mainSplitView
             }
@@ -35,13 +33,27 @@ struct ContentView: View {
                         Button {
                             showingFleet.toggle()
                         } label: {
-                            Label("Fleet", systemImage: "rectangle.3.group")
+                            Label(
+                                showingFleet ? "Devices" : "Fleet",
+                                systemImage: showingFleet ? "sidebar.left" : "rectangle.3.group"
+                            )
                         }
-                        .help("Fleet Overview")
+                        .help(showingFleet ? "Back to Devices" : "Fleet Overview")
                     }
                 }
         } detail: {
-            if let device = appState.selectedDevice {
+            if showingFleet {
+                FleetView()
+                    .toolbar {
+                        ToolbarItem(placement: .navigation) {
+                            Button {
+                                showingFleet = false
+                            } label: {
+                                Label("Back to Devices", systemImage: "chevron.left")
+                            }
+                        }
+                    }
+            } else if let device = appState.selectedDevice {
                 DeviceDetailView(device: device)
             } else {
                 EmptyDeviceView()
