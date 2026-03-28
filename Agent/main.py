@@ -139,21 +139,69 @@ async def metrics():
 
 @app.post("/v1/exec")
 async def exec_command(payload: dict):
-    """Execute a command on the device (guarded)."""
-    command = payload.get("command", "")
-    timeout = payload.get("timeout", 30)
+    """Execute a command on the device (allowlist-guarded).
 
-    if not command:
+    Security: Uses allowlist of safe command prefixes. Commands not matching
+    the allowlist are rejected. No shell=True — uses shlex for safe parsing.
+    """
+    import shlex
+
+    command = payload.get("command", "")
+    timeout = min(payload.get("timeout", 30), 300)  # Cap at 5 minutes
+
+    if not command or not isinstance(command, str):
         return JSONResponse(status_code=400, content={"error": "command is required"})
 
-    dangerous = ["rm -rf /", "mkfs", "dd if=", "shutdown", "halt"]
-    for d in dangerous:
-        if d in command:
-            return JSONResponse(status_code=403, content={"error": f"Blocked dangerous command pattern: {d}"})
+    if len(command) > 2000:
+        return JSONResponse(status_code=400, content={"error": "Command too long (max 2000 chars)"})
+
+    # Allowlist of safe command prefixes
+    ALLOWED_PREFIXES = [
+        "ls", "cat", "head", "tail", "grep", "find", "wc", "sort", "df", "du",
+        "free", "uptime", "uname", "hostname", "whoami", "id", "date", "env",
+        "echo", "pwd", "which", "file", "stat", "lsblk", "lscpu", "lsusb",
+        "ip", "ifconfig", "ss", "netstat", "ping", "traceroute", "dig", "nslookup",
+        "ps", "top", "htop", "nvidia-smi", "tegrastats", "nvpmodel", "jetson_clocks",
+        "docker", "ros2", "colcon",
+        "systemctl status", "systemctl list-units", "journalctl",
+        "dpkg", "apt list", "pip3 list",
+        "v4l2-ctl", "i2cdetect", "i2cget",
+        "sha256sum", "md5sum", "cksum",
+        "python3 -c", "python3 --version",
+    ]
+
+    # Check command against allowlist
+    cmd_lower = command.strip().lower()
+    allowed = False
+    for prefix in ALLOWED_PREFIXES:
+        if cmd_lower.startswith(prefix):
+            allowed = True
+            break
+
+    if not allowed:
+        return JSONResponse(
+            status_code=403,
+            content={"error": f"Command not in allowlist. Allowed prefixes: {', '.join(sorted(set(p.split()[0] for p in ALLOWED_PREFIXES)))}"}
+        )
+
+    # Block shell metacharacters that could enable injection
+    BLOCKED_CHARS = [";", "&&", "||", "|", "`", "$(", "${", ">", "<", "\n", "\r"]
+    for char in BLOCKED_CHARS:
+        if char in command:
+            return JSONResponse(
+                status_code=403,
+                content={"error": f"Shell metacharacter '{char}' not allowed. Use direct commands only."}
+            )
 
     try:
-        result = subprocess.run(command, shell=True, capture_output=True, text=True, timeout=timeout)
+        # Use shlex.split for safe argument parsing, no shell=True
+        args = shlex.split(command)
+        result = subprocess.run(args, capture_output=True, text=True, timeout=timeout)
         return {"exit_code": result.returncode, "stdout": result.stdout, "stderr": result.stderr}
+    except ValueError as e:
+        return JSONResponse(status_code=400, content={"error": f"Invalid command syntax: {e}"})
+    except FileNotFoundError:
+        return JSONResponse(status_code=400, content={"error": f"Command not found: {command.split()[0]}"})
     except subprocess.TimeoutExpired:
         return JSONResponse(status_code=408, content={"error": f"Command timed out after {timeout}s"})
 

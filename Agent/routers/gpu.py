@@ -167,16 +167,39 @@ async def model_list():
     return {"models": models, "count": len(models)}
 
 
+MAX_UPLOAD_SIZE = 10 * 1024 * 1024 * 1024  # 10GB max
+
+
 @router.post("/models/upload")
 async def model_upload(file: UploadFile = File(...)):
-    """Upload a model file to the device."""
+    """Upload a model file to the device (path-safe, size-limited)."""
+    import re
+
     os.makedirs(MODELS_DIR, exist_ok=True)
-    dest = os.path.join(MODELS_DIR, file.filename)
+
+    # Sanitize filename — prevent path traversal
+    safe_name = os.path.basename(file.filename or "upload.bin")
+    safe_name = re.sub(r'[^\w\-.]', '_', safe_name)  # Only alphanumeric, dash, dot
+    if not safe_name or safe_name.startswith("."):
+        safe_name = "upload.bin"
+
+    dest = os.path.join(MODELS_DIR, safe_name)
+    # Verify resolved path stays within MODELS_DIR
+    if not os.path.realpath(dest).startswith(os.path.realpath(MODELS_DIR)):
+        return JSONResponse(status_code=403, content={"error": "Path traversal blocked"})
 
     try:
-        content = await file.read()
+        # Stream to disk in chunks to avoid memory exhaustion
+        total_size = 0
         with open(dest, "wb") as f:
-            f.write(content)
-        return {"success": True, "path": dest, "size_bytes": len(content), "filename": file.filename}
+            while chunk := await file.read(1024 * 1024):  # 1MB chunks
+                total_size += len(chunk)
+                if total_size > MAX_UPLOAD_SIZE:
+                    f.close()
+                    os.remove(dest)
+                    return JSONResponse(status_code=413, content={"error": f"File too large (max {MAX_UPLOAD_SIZE // (1024**3)}GB)"})
+                f.write(chunk)
+
+        return {"success": True, "path": dest, "size_bytes": total_size, "filename": safe_name}
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})

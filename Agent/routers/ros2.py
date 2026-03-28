@@ -1,6 +1,8 @@
 """ROS2 lifecycle: nodes, topics, services, launch, lifecycle, bags."""
 
 import os
+import re
+import shlex
 import subprocess
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
@@ -14,13 +16,24 @@ ROS2_ENV = {**os.environ, "ROS_LOG_DIR": "/tmp/ros_logs", "HOME": os.environ.get
 
 
 def _ros2_cmd(args: list[str], timeout: int = 10) -> subprocess.CompletedProcess:
-    """Run a ROS2 command with proper environment sourcing."""
-    cmd = f"source {ROS2_SETUP} 2>/dev/null && {' '.join(args)}"
+    """Run a ROS2 command with proper environment sourcing.
+
+    All user-provided arguments MUST be passed through shlex.quote() before
+    being added to args to prevent shell injection.
+    """
+    # Quote each argument for shell safety
+    safe_args = [shlex.quote(a) for a in args]
+    cmd = f"source {ROS2_SETUP} 2>/dev/null && {' '.join(safe_args)}"
     return subprocess.run(
         ["bash", "-c", cmd],
         capture_output=True, text=True, timeout=timeout,
         env=ROS2_ENV,
     )
+
+
+def _validate_ros2_name(name: str) -> bool:
+    """Validate a ROS2 name (node, topic, package) is safe."""
+    return bool(re.match(r'^[a-zA-Z0-9/_\-\.]+$', name)) and len(name) < 256
 
 
 @router.get("/nodes")
@@ -76,6 +89,8 @@ async def ros2_launch(payload: dict):
 
     if not package or not launch_file:
         return JSONResponse(status_code=400, content={"error": "package and launch_file required"})
+    if not _validate_ros2_name(package) or not _validate_ros2_name(launch_file):
+        return JSONResponse(status_code=400, content={"error": "Invalid package or launch file name"})
 
     try:
         managed = process_manager.start(
@@ -127,6 +142,8 @@ async def ros2_lifecycle_transition(payload: dict):
 
     if not node or not transition:
         return JSONResponse(status_code=400, content={"error": "node and transition required"})
+    if not _validate_ros2_name(node):
+        return JSONResponse(status_code=400, content={"error": "Invalid node name"})
 
     valid_transitions = ["configure", "activate", "deactivate", "cleanup", "shutdown"]
     if transition not in valid_transitions:
@@ -143,8 +160,8 @@ async def ros2_lifecycle_transition(payload: dict):
 async def ros2_topic_echo(payload: dict):
     """Echo a single message from a topic."""
     topic = payload.get("topic", "")
-    if not topic:
-        return JSONResponse(status_code=400, content={"error": "topic required"})
+    if not topic or not _validate_ros2_name(topic):
+        return JSONResponse(status_code=400, content={"error": "Valid topic name required"})
     try:
         result = _ros2_cmd(["ros2", "topic", "echo", "--once", topic])
         return {"topic": topic, "message": result.stdout, "error": result.stderr if result.returncode != 0 else None}
@@ -161,6 +178,8 @@ async def ros2_topic_pub(payload: dict):
 
     if not topic or not msg_type:
         return JSONResponse(status_code=400, content={"error": "topic and type required"})
+    if not _validate_ros2_name(topic) or not _validate_ros2_name(msg_type):
+        return JSONResponse(status_code=400, content={"error": "Invalid topic or message type name"})
     try:
         result = _ros2_cmd(["ros2", "topic", "pub", "--once", topic, msg_type, data])
         return {"topic": topic, "type": msg_type, "success": result.returncode == 0}
@@ -230,6 +249,12 @@ async def ros2_bag_play(payload: dict):
 
     if not bag_path:
         return JSONResponse(status_code=400, content={"error": "bag_path required"})
+
+    # Validate bag path — must be in known directories
+    allowed_dirs = ["/tmp", "/home/jetson/bags", "/opt/ros2_bags"]
+    real_path = os.path.realpath(bag_path)
+    if not any(real_path.startswith(d) for d in allowed_dirs):
+        return JSONResponse(status_code=403, content={"error": "Bag path must be in /tmp, /home/jetson/bags, or /opt/ros2_bags"})
 
     cmd = ["ros2", "bag", "play", bag_path]
     if rate != 1.0:

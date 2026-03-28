@@ -34,10 +34,13 @@ async def docker_containers():
 @router.post("/action")
 async def docker_action(payload: dict):
     """Start, stop, restart, or remove a container."""
+    import re
     container = payload.get("container", "")
     action = payload.get("action", "")
     if not container or action not in ("start", "stop", "restart", "remove"):
         return JSONResponse(status_code=400, content={"error": "container and action (start|stop|restart|remove) required"})
+    if not re.match(r'^[a-zA-Z0-9][a-zA-Z0-9_.\-]*$', container):
+        return JSONResponse(status_code=400, content={"error": "Invalid container name"})
     try:
         result = subprocess.run(["docker", action, container], capture_output=True, text=True, timeout=30)
         return {"action": action, "container": container, "exit_code": result.returncode, "stdout": result.stdout.strip(), "stderr": result.stderr.strip()}

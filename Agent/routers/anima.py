@@ -42,14 +42,23 @@ async def anima_modules():
 @router.post("/deploy")
 async def anima_deploy(payload: dict):
     """Deploy an ANIMA pipeline from docker-compose YAML."""
+    import re
+
     compose_yaml = payload.get("compose_yaml", "")
     pipeline_name = payload.get("pipeline_name", "default")
 
     if not compose_yaml:
         return JSONResponse(status_code=400, content={"error": "compose_yaml is required"})
 
+    # Sanitize pipeline name — alphanumeric + hyphens only, prevent path traversal
+    pipeline_name = re.sub(r'[^a-zA-Z0-9\-]', '', pipeline_name)
+    if not pipeline_name:
+        pipeline_name = "default"
+
     os.makedirs(ANIMA_PIPELINES_DIR, exist_ok=True)
     compose_path = os.path.join(ANIMA_PIPELINES_DIR, f"{pipeline_name}.yaml")
+    if not os.path.realpath(compose_path).startswith(os.path.realpath(ANIMA_PIPELINES_DIR)):
+        return JSONResponse(status_code=403, content={"error": "Path traversal blocked"})
 
     with open(compose_path, "w") as f:
         f.write(compose_yaml)
