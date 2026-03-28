@@ -56,7 +56,8 @@ RUN pip3 install --no-cache-dir \
     fastapi \
     'uvicorn[standard]' \
     psutil \
-    pyyaml
+    pyyaml \
+    python-multipart
 
 # Copy agent
 COPY Agent/ /opt/thor-agent/
