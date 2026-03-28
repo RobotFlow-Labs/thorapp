@@ -24,6 +24,11 @@ struct AddDeviceView: View {
     @State private var showingKeyGen = false
     @State private var generatedKeyPath: String?
 
+    // Host Key Verification (TOFU)
+    @State private var hostKeyInfo: HostKeyInfo?
+    @State private var showingHostKeyConfirm = false
+    @State private var isVerifyingHostKey = false
+
     var body: some View {
         VStack(spacing: 0) {
             Form {
@@ -171,6 +176,19 @@ struct AddDeviceView: View {
             .padding(20)
         }
         .frame(width: 520, height: 560)
+        .alert("Verify Host Key", isPresented: $showingHostKeyConfirm) {
+            Button("Trust & Continue") {
+                // User confirmed — proceed with enrollment
+                Task { await addDevice() }
+            }
+            Button("Cancel", role: .cancel) {
+                hostKeyInfo = nil
+            }
+        } message: {
+            if let info = hostKeyInfo {
+                Text("First connection to \(hostname).\n\nFingerprint (\(info.keyType)):\n\(info.fingerprint)\n\nDo you trust this host?")
+            }
+        }
     }
 
     // MARK: - Actions
@@ -178,6 +196,31 @@ struct AddDeviceView: View {
     private func addDevice() async {
         isSaving = true
         errorMessage = nil
+
+        // Step 0: Verify host key (TOFU)
+        let sshPort = Int(port) ?? 22
+        if hostKeyInfo == nil {
+            isVerifyingHostKey = true
+            let verifier = HostKeyVerifier()
+            let result = await verifier.fetchFingerprint(host: hostname, port: sshPort)
+            isVerifyingHostKey = false
+
+            switch result {
+            case .success(let info):
+                hostKeyInfo = info
+                showingHostKeyConfirm = true
+                isSaving = false
+                return  // Wait for user confirmation
+            case .unreachable:
+                errorMessage = "Cannot reach \(hostname):\(sshPort). Check the hostname and port."
+                isSaving = false
+                return
+            case .error(let msg):
+                errorMessage = "Host key scan failed: \(msg)"
+                isSaving = false
+                return
+            }
+        }
 
         let device = Device(
             displayName: displayName,
@@ -199,8 +242,19 @@ struct AddDeviceView: View {
                     try appState.keychain.storePassword(password, for: deviceID)
                 }
 
+                // Store host key fingerprint
+                if let keyInfo = hostKeyInfo, let db = appState.db {
+                    let identity = DeviceIdentity(
+                        deviceID: deviceID,
+                        hostKeyFingerprint: keyInfo.fingerprint
+                    )
+                    try await db.writer.write { [identity] dbConn in
+                        var record = identity
+                        try record.insert(dbConn)
+                    }
+                }
+
                 // Persist SSH config
-                let sshPort = Int(port) ?? 22
                 let config = DeviceConfig(
                     deviceID: deviceID,
                     sshUsername: username,

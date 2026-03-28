@@ -6,253 +6,204 @@
 
 <p align="center">
   <strong>The first fully open-source macOS app for connecting Macs to NVIDIA Jetson devices.</strong>
+  <br/>
+  <em>Deploy ANIMA AI modules. Control Docker & ROS2. Monitor fleets. No terminal needed.</em>
 </p>
 
 <p align="center">
-  <a href="#features">Features</a> &bull;
   <a href="#quick-start">Quick Start</a> &bull;
+  <a href="#features">Features</a> &bull;
+  <a href="#anima-modules">ANIMA Modules</a> &bull;
+  <a href="#cli">CLI (thorctl)</a> &bull;
   <a href="#architecture">Architecture</a> &bull;
-  <a href="#development">Development</a> &bull;
-  <a href="#docker-simulator">Docker Simulator</a> &bull;
-  <a href="#roadmap">Roadmap</a>
+  <a href="#development">Development</a>
 </p>
 
 ---
 
-THOR replaces fragmented terminal workflows with a native macOS control plane for Jetson-based robotics development. Connect, deploy, debug, and manage your Jetson Thor and Orin devices — without ever opening Terminal.
+## Quick Start
+
+```bash
+# Clone and build
+git clone https://github.com/RobotFlow-Labs/thorapp.git
+cd thorapp
+make build
+
+# Start Jetson simulators (Docker)
+make docker-up
+
+# Run tests (50 tests across 7 suites)
+make test
+
+# Package and launch the app
+make run
+
+# Or install the CLI
+make install-cli
+thorctl health 8470
+thorctl modules 8470
+```
 
 ## Features
 
-- **Native macOS** — SwiftUI on Apple Silicon. Menu bar integration, Keychain storage, system notifications.
-- **Zero terminal dependency** — Device discovery, SSH management, file sync, and runtime control from a GUI.
-- **Secure by default** — SSH credentials stored in macOS Keychain. Trust-on-first-use host key verification. Localhost-only agent API tunneled over SSH.
-- **Multi-device ready** — Architecture designed for fleet management from day one, even while shipping single-device workflows first.
-- **Jetson-aware** — Understands JetPack versions, GPU metrics, Docker runtimes, and ROS2 stacks natively.
-- **Open source** — MIT licensed. Built by [RobotFlow Labs](https://github.com/RobotFlow-Labs).
+### 8-Tab Device Control
 
-## Supported Devices
+| Tab | What it does |
+|-----|-------------|
+| **Overview** | Live CPU, memory, disk, GPU metrics with auto-refresh and staleness indicators |
+| **ANIMA** | Browse AI modules, compose pipelines, deploy with TensorRT, monitor status |
+| **Files** | rsync delta sync, scp upload, drag-and-drop, SHA-256 verification |
+| **Deploy** | Saved deploy profiles with preflight checks and step-by-step execution |
+| **ROS2** | Node, topic, and service inspector with message types |
+| **Docker** | Container list, start/stop/restart with confirmation, log viewer |
+| **Logs** | System + agent log streaming with keyword filter and severity coloring |
+| **History** | Event timeline + transfer history with verification status |
 
-| Device | Status |
-|--------|--------|
-| Jetson Thor | Primary target |
-| Jetson Orin NX / Nano | Supported |
-| Jetson AGX Orin | Supported |
-| Other Jetson variants | Best-effort |
+### Fleet Management
+- Grid view with health rollup badges
+- Environment filter (lab/field/staging/demo) + search
+- Multi-select batch actions: health refresh, disconnect, ANIMA module check, pipeline stop
+- Per-device result reporting
 
-## Quick Start
+### Security
+- **Trust-On-First-Use (TOFU)**: SSH host key fingerprint displayed and confirmed during enrollment
+- **Keychain**: All credentials stored in macOS Keychain, never plaintext
+- **Localhost-only agent**: API bound to 127.0.0.1, accessed via SSH tunnel
+- **Confirmation dialogs**: Reboot, delete, container stop require explicit confirmation
+- **Auto-reconnect**: Exponential backoff (2-32s) with configurable retry limits
 
-### Prerequisites
+### Onboarding
+- 3-step welcome flow with prerequisite checks (SSH, rsync, Docker, Keychain, database)
+- Quick Add presets for Docker simulators
+- SSH key generation (ed25519) with public key clipboard copy
+- Network discovery via mDNS and ARP scanning
 
-- macOS 14+ (Sonoma) on Apple Silicon
-- Swift 6.2+ toolchain (`xcode-select --install` or [swift.org](https://swift.org/install))
-- Docker Desktop (for the Jetson simulator)
+## ANIMA Modules
 
-### Build and Run
+THOR is designed to deploy [ANIMA](https://github.com/AIFLOWLABS) AI modules to Jetson devices:
 
-```bash
-# Clone
-git clone https://github.com/RobotFlow-Labs/thorapp.git
-cd thorapp
-
-# Build
-swift build
-
-# Run tests
-swift test
-
-# Package into .app bundle and launch
-Scripts/compile_and_run.sh
+```
+                    ┌─────────────────────────────────┐
+  THOR (Mac)        │  ANIMA Module (Jetson)           │
+  ────────────      │  ┌─────────────────────────────┐ │
+  Browse modules    │  │ Docker container             │ │
+  Compose pipeline  │  │ TensorRT backend             │ │
+  Deploy via SSH ──►│  │ ROS2 topics (in/out)         │ │
+  Monitor health    │  │ Health: /anima/<mod>/health   │ │
+                    │  └─────────────────────────────┘ │
+                    └─────────────────────────────────┘
 ```
 
-### Start the Jetson Simulator
+**Included simulated modules**: PETRA (depth perception), CHRONOS (tracking), PYGMALION (VLA)
 
-No Jetson hardware? No problem. Spin up simulated devices with Docker:
+Each module declares capabilities, ROS2 interfaces, hardware support, and performance profiles via `anima_module.yaml` manifests.
 
-```bash
-# Start two simulated Jetsons (Thor + Orin)
-docker compose up -d
+## CLI
 
-# Verify they're running
-docker compose ps
-
-# Test SSH connectivity
-ssh -p 2222 jetson@localhost    # password: jetson
-ssh -p 2223 jetson@localhost    # password: jetson (Orin sim)
-
-# Test agent API
-curl http://localhost:8470/v1/health
-curl http://localhost:8470/v1/capabilities
-curl http://localhost:8470/v1/metrics
-
-# Tear down
-docker compose down
 ```
+thorctl — THOR CLI for Jetson device management
 
-### Add a Device in THOR
+DEVICE COMMANDS:
+  devices, ls                   List registered devices
+  connect <host> [port]         Connect and show device info
+  health [port]                 Check agent health
+  capabilities, caps [port]     Show device capabilities
+  metrics [port]                Show system metrics
+  exec <port> <command>         Execute command on device
+  docker [port]                 List Docker containers
 
-1. Launch the app (`Scripts/compile_and_run.sh`)
-2. Click **+** in the sidebar
-3. Enter:
-   - **Name**: `Jetson Thor Sim`
-   - **Hostname**: `localhost`
-   - **Port**: `2222`
-   - **Username**: `jetson`
-   - **Auth**: Password — `jetson`
-4. Click **Add Device**
+ANIMA COMMANDS:
+  anima-modules, modules [port] List ANIMA modules
+  anima-status [port]           Show pipeline status
+  anima-deploy <port> <yaml>    Deploy ANIMA pipeline
+  anima-stop <port> [name]      Stop ANIMA pipeline
+
+ROS2 COMMANDS:
+  ros2-nodes [port]             List ROS2 nodes
+  ros2-topics [port]            List ROS2 topics
+
+MONITORING:
+  watch [port] [interval]       Live metrics dashboard
+  screenshot [filename]         Capture macOS screenshot
+```
 
 ## Architecture
 
 ```
 ┌─────────────────────────────────────────────────────┐
 │  macOS                                              │
-│                                                     │
 │  ┌──────────────┐     XPC      ┌──────────────┐    │
 │  │  THOR.app    │◄────────────►│  THORCore    │    │
 │  │  (SwiftUI)   │              │  (Helper)    │    │
 │  └──────────────┘              └──────┬───────┘    │
-│                                       │             │
-│                                  SSH tunnel         │
-│                                       │             │
+│  ┌──────────────┐                     │             │
+│  │  thorctl     │              SSH tunnel           │
+│  │  (CLI)       │                     │             │
+│  └──────────────┘                     │             │
 └───────────────────────────────────────┼─────────────┘
-                                        │
                                         ▼
 ┌───────────────────────────────────────────────────────┐
 │  Jetson Device                                        │
-│                                                       │
 │  ┌──────────────────┐                                 │
 │  │  THOR Agent       │  ◄── localhost:8470 HTTP/JSON  │
-│  │  (Python/FastAPI) │                                │
+│  │  (Python/FastAPI) │      18 endpoints              │
 │  └────────┬─────────┘                                 │
-│           │                                           │
-│     ┌─────┴─────┬──────────┬──────────┐               │
-│     │ Docker    │ ROS2     │ GPU/sys  │               │
-│     │ runtime   │ tooling  │ metrics  │               │
-│     └───────────┴──────────┴──────────┘               │
+│     ┌─────┴─────┬──────────┬──────────┬────────┐      │
+│     │ Docker    │ ROS2     │ GPU/sys  │ ANIMA  │      │
+│     │ runtime   │ tooling  │ metrics  │ modules│      │
+│     └───────────┴──────────┴──────────┴────────┘      │
 └───────────────────────────────────────────────────────┘
 ```
-
-### Key Design Decisions
-
-| Decision | Choice | Why |
-|----------|--------|-----|
-| UI Framework | SwiftUI + MenuBarExtra | Best macOS integration, menu bar, Keychain, notifications |
-| Background Service | THORCore via SMAppService | Long-running SSH sessions survive app closure |
-| App-to-Helper IPC | NSXPCConnection | Native macOS process boundary |
-| Remote Transport | SSH (OpenSSH CLI) | No extra Jetson network exposure, leverages existing trust |
-| Jetson Agent | Python 3 + FastAPI | Simplest bootstrap on Jetson Ubuntu, fast iteration |
-| Agent Binding | localhost only (127.0.0.1) | Accessed via SSH tunnel — never exposed on network |
-| Local Database | SQLite via GRDB | Explicit migrations, cross-process safe, predictable |
-| Secrets | macOS Keychain | Never plaintext, OS-managed encryption |
-| Remote Operations | Typed jobs with lifecycle | Progress UI, retries, audit trail, fleet-safe |
 
 ### Project Structure
 
 ```
-thorapp/
-├── Package.swift                 # SwiftPM — 3 targets
+thorapp/                          72 files, 15k+ lines
+├── Package.swift                 4 targets: THORApp, THORCore, THORctl, THORShared
+├── Makefile                      Build, test, run, install, Docker, stats
 ├── Sources/
-│   ├── THORApp/                  # SwiftUI application
-│   │   ├── THORApp.swift         # @main — WindowGroup + MenuBarExtra + Settings
-│   │   ├── Models/AppState.swift # @Observable root state
-│   │   └── Views/                # 7 views (list, detail, add, menubar, settings)
-│   ├── THORCore/                 # Background helper service
-│   │   └── main.swift            # Service entry point
-│   └── THORShared/               # Shared library
-│       ├── Database/             # GRDB manager + 9-table migration
-│       ├── Keychain/             # macOS Keychain wrapper
-│       ├── Models/               # 7 record types (Device, Job, Transfer, etc.)
-│       └── SSH/                  # SSH session manager (actor, ControlMaster)
-├── Tests/THORTests/              # Swift Testing suite
-├── Agent/                        # Python Jetson agent (FastAPI)
-│   └── main.py                   # /v1/health, /v1/capabilities, /v1/metrics, /v1/exec
-├── Docker/                       # Jetson device simulator
-│   ├── Dockerfile.jetson-sim     # Ubuntu 22.04 + SSH + Python agent
-│   └── entrypoint.sh
-├── docker-compose.yml            # 2 simulated Jetsons (Thor + Orin)
-├── Scripts/
-│   ├── package_app.sh            # Build + package .app bundle
-│   └── compile_and_run.sh        # Dev loop: kill, build, package, launch
-├── Assets/
-│   └── jetson-thor.png
-└── version.env                   # Marketing version + build number
+│   ├── THORApp/                  SwiftUI application
+│   │   ├── THORApp.swift         @main — WindowGroup + MenuBarExtra + Settings
+│   │   ├── Models/AppState.swift @Observable root state
+│   │   ├── Views/                16 views (8 tabs + fleet + onboarding + settings + dialogs)
+│   │   └── Services/             DeviceConnector, PipelineDeployer, FileTransfer, AgentInstaller,
+│   │                             DebugBundleExporter, NetworkDiscovery, PrerequisiteChecker
+│   ├── THORCore/                 Background helper service
+│   ├── THORctl/                  CLI with 17 commands
+│   └── THORShared/               Shared library
+│       ├── Database/             GRDB manager + 3 migrations, 13 tables
+│       ├── Keychain/             macOS Keychain wrapper
+│       ├── Models/               11 record types + response models
+│       ├── SSH/                  Session manager (actor) + host key verifier
+│       └── Services/             Pipeline composer
+├── Tests/                        50 tests across 7 suites
+├── Agent/                        Python Jetson agent (18 endpoints)
+├── Docker/                       Jetson simulator (Thor + Orin)
+├── Scripts/                      Build, package, icon generation
+└── .github/workflows/ci.yml     CI/CD pipeline
 ```
-
-### Database Schema
-
-9 tables covering the full device lifecycle:
-
-| Table | Purpose |
-|-------|---------|
-| `devices` | Managed device registry |
-| `device_identities` | Host keys, serial numbers, agent IDs |
-| `device_compatibility_snapshots` | JetPack, Docker, ROS2, GPU capabilities |
-| `connection_states` | Live connection status per device |
-| `jobs` | Typed remote operations with lifecycle |
-| `job_events` | Audit trail for job state transitions |
-| `transfer_records` | File sync history with verification |
-| `runtime_profiles` | Deploy and launch configurations |
-| `operator_preferences` | User settings and shortcuts |
 
 ## Development
 
-### Build Commands
-
 ```bash
-swift build                          # Debug build
-swift build -c release               # Release build
-swift test                           # Run test suite
-Scripts/package_app.sh               # Package .app bundle (release)
-Scripts/compile_and_run.sh           # Full dev loop: build, package, launch
-Scripts/compile_and_run.sh --test    # Run tests before launching
+make build          # Debug build
+make release        # Release build
+make test           # All 50 tests
+make test-unit      # Unit tests only (no Docker)
+make run            # Package and launch app
+make docker-up      # Start Jetson sims
+make install-cli    # Install thorctl to /usr/local/bin
+make stats          # Show project stats
+make clean          # Clean build artifacts
 ```
 
-### Jetson Agent Development
+## Supported Devices
 
-```bash
-cd Agent
-pip install fastapi uvicorn psutil   # or use uv
-python main.py                       # Starts on 127.0.0.1:8470
-```
-
-### Docker Simulator
-
-```bash
-docker compose up -d                 # Start Thor + Orin simulators
-docker compose logs -f jetson-sim    # Watch logs
-docker compose down                  # Stop all
-```
-
-| Service | SSH Port | Agent Port | Simulated Model |
-|---------|----------|------------|-----------------|
-| `jetson-sim` | 2222 | 8470 | Jetson Thor |
-| `jetson-orin-sim` | 2223 | 8471 | Jetson Orin NX |
-
-**Default credentials**: `jetson` / `jetson`
-
-## Roadmap
-
-THOR is built in waves, each adding a layer of capability:
-
-| Milestone | What | Status |
-|-----------|------|--------|
-| **M0** | Architecture freeze + first vertical slice | **In Progress** |
-| **M1** | Single-device managed endpoint (discovery, enrollment, SSH) | Planned |
-| **M2** | Dashboard + menu bar control surface | Planned |
-| **M3** | Delta file sync + artifact delivery | Planned |
-| **M4** | Docker + ROS2 runtime orchestration | Planned |
-| **M5** | Live logs, telemetry, ROS2 graph, debug export | Planned |
-| **M6** | Fleet view, batch actions, AI pipeline launchers | Planned |
-
-See [`sub_prds/`](../sub_prds/) for the full breakdown of each milestone.
-
-## Contributing
-
-THOR is open source under the MIT license. We welcome contributions.
-
-1. Fork the repo
-2. Create a feature branch
-3. `swift build && swift test`
-4. Submit a PR
+| Device | Status | JetPack |
+|--------|--------|---------|
+| Jetson Thor | Primary | 6.1+ |
+| Jetson Orin NX / Nano | Supported | 6.0+ |
+| Jetson AGX Orin | Supported | 5.1+ |
 
 ## License
 

@@ -144,19 +144,100 @@ struct DeviceDetailView: View {
     }
 
     private var notConnectedPlaceholder: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "link.badge.plus")
+        let status = appState.connectionStatus(for: device.id ?? 0)
+        return VStack(spacing: 16) {
+            Image(systemName: recoveryIcon(for: status))
                 .font(.system(size: 32))
-                .foregroundStyle(.tertiary)
-            Text("Connect to this device to access this feature.")
+                .foregroundStyle(recoveryColor(for: status))
+
+            Text(recoveryTitle(for: status))
+                .font(.system(size: 15, weight: .medium))
+            Text(recoveryMessage(for: status))
                 .foregroundStyle(.secondary)
-                .font(.system(size: 14))
-            Button("Connect") {
-                Task { await connectToDevice() }
+                .font(.system(size: 13))
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 300)
+
+            HStack(spacing: 12) {
+                switch status {
+                case .authFailed:
+                    Button("Update Credentials") {
+                        // Re-open device settings
+                    }
+                    .buttonStyle(.bordered)
+                case .hostKeyMismatch:
+                    Button("Review Host Key") {
+                        // Show host key verification
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(.orange)
+                case .unreachable:
+                    Button("Retry Connection") {
+                        Task { await connectToDevice() }
+                    }
+                    .buttonStyle(.bordered)
+                    Button("Check Network") {
+                        NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.network")!)
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(.secondary)
+                default:
+                    Button("Connect") {
+                        Task { await connectToDevice() }
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+
+                Button("Copy IP") {
+                    if let ip = device.lastKnownIP {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(ip, forType: .string)
+                    }
+                }
+                .buttonStyle(.bordered)
+                .tint(.secondary)
             }
-            .buttonStyle(.bordered)
         }
         .frame(maxWidth: .infinity, minHeight: 200)
+    }
+
+    private func recoveryIcon(for status: ConnectionStatus) -> String {
+        switch status {
+        case .authFailed: "lock.trianglebadge.exclamationmark"
+        case .hostKeyMismatch: "exclamationmark.shield"
+        case .unreachable: "wifi.slash"
+        case .disconnected: "link.badge.plus"
+        default: "link.badge.plus"
+        }
+    }
+
+    private func recoveryColor(for status: ConnectionStatus) -> Color {
+        switch status {
+        case .authFailed: .red
+        case .hostKeyMismatch: .orange
+        case .unreachable: .red
+        default: .secondary
+        }
+    }
+
+    private func recoveryTitle(for status: ConnectionStatus) -> String {
+        switch status {
+        case .authFailed: "Authentication Failed"
+        case .hostKeyMismatch: "Host Key Changed"
+        case .unreachable: "Device Unreachable"
+        case .disconnected: "Device Disconnected"
+        default: "Not Connected"
+        }
+    }
+
+    private func recoveryMessage(for status: ConnectionStatus) -> String {
+        switch status {
+        case .authFailed: "SSH credentials were rejected. Update your SSH key or password."
+        case .hostKeyMismatch: "The device's SSH host key has changed since enrollment. This could indicate a security issue or device reprovisioning."
+        case .unreachable: "Cannot reach \(device.hostname). Check that the device is powered on and on the same network."
+        case .disconnected: "Connect to this device to access features."
+        default: "Connect to this device to get started."
+        }
     }
 
     // MARK: - Header

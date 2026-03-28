@@ -3,6 +3,8 @@ import SwiftUI
 struct OnboardingView: View {
     @Binding var isComplete: Bool
     @State private var currentStep = 0
+    @State private var prereqResults: [PrerequisiteChecker.CheckResult] = []
+    @State private var isCheckingPrereqs = false
 
     private let steps: [OnboardingStep] = [
         OnboardingStep(
@@ -85,9 +87,35 @@ struct OnboardingView: View {
                 }
             }
             .padding(.horizontal, 32)
+
+            // Prerequisite results (shown on last step)
+            if currentStep == steps.count - 1 && !prereqResults.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(prereqResults) { result in
+                        HStack(spacing: 6) {
+                            Image(systemName: result.status == .pass ? "checkmark.circle.fill" :
+                                    result.status == .warning ? "exclamationmark.triangle.fill" : "xmark.circle.fill")
+                                .foregroundStyle(result.status == .pass ? .green :
+                                                    result.status == .warning ? .orange : .red)
+                                .font(.system(size: 11))
+                            Text(result.name)
+                                .font(.system(size: 12, weight: .medium))
+                            Text(result.detail)
+                                .font(.system(size: 11))
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
+                    }
+                }
+                .padding(.horizontal, 32)
+            }
         }
         .padding(40)
-        .frame(width: 600, height: 450)
+        .frame(width: 600, height: prereqResults.isEmpty ? 450 : 520)
+        .task {
+            let checker = PrerequisiteChecker()
+            prereqResults = await checker.runAll()
+        }
     }
 }
 
