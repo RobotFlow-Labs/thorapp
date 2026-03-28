@@ -10,6 +10,8 @@ struct DockerView: View {
     @State private var selectedContainer: DockerContainer?
     @State private var containerLogs: String = ""
     @State private var showingLogs = false
+    @State private var containerToStop: String?
+    @State private var containerToRemove: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -22,6 +24,20 @@ struct DockerView: View {
             containerList
         }
         .task { await loadContainers() }
+        .alert("Stop Container", isPresented: Binding(
+            get: { containerToStop != nil },
+            set: { if !$0 { containerToStop = nil } }
+        )) {
+            Button("Stop", role: .destructive) {
+                if let name = containerToStop {
+                    Task { await performAction(container: name, action: "stop") }
+                }
+                containerToStop = nil
+            }
+            Button("Cancel", role: .cancel) { containerToStop = nil }
+        } message: {
+            Text("Stop container \"\(containerToStop ?? "")\"?")
+        }
     }
 
     private var headerRow: some View {
@@ -89,7 +105,7 @@ struct DockerView: View {
             HStack(spacing: 4) {
                 if container.state == "running" {
                     actionIcon("stop.fill", color: .orange) {
-                        Task { await performAction(container: container.name, action: "stop") }
+                        containerToStop = container.name
                     }
                     actionIcon("arrow.clockwise", color: .blue) {
                         Task { await performAction(container: container.name, action: "restart") }

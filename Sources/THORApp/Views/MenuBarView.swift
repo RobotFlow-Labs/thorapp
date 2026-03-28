@@ -13,6 +13,10 @@ struct MenuBarView: View {
             footerSection
         }
         .frame(width: 280)
+        .task {
+            // Refresh device data when menu opens
+            try? await appState.loadDevices()
+        }
     }
 
     private var headerSection: some View {

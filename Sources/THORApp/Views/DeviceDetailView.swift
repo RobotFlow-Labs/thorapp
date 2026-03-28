@@ -12,6 +12,7 @@ struct DeviceDetailView: View {
     @State private var showingRebootConfirm = false
     @State private var showingExportDebug = false
     @State private var metricsTimer: Task<Void, Never>?
+    @State private var lastMetricsRefresh: Date?
 
     private var isConnected: Bool {
         appState.connectionStatus(for: device.id ?? 0) == .connected
@@ -237,8 +238,25 @@ struct DeviceDetailView: View {
 
     // MARK: - Metrics Card
 
+    private var isMetricsStale: Bool {
+        guard let lastRefresh = lastMetricsRefresh else { return true }
+        return Date().timeIntervalSince(lastRefresh) > 30
+    }
+
     private var metricsCard: some View {
-        GroupBox("System Metrics") {
+        GroupBox(label: HStack {
+            Text("System Metrics")
+            Spacer()
+            if isMetricsStale {
+                Label("Stale", systemImage: "exclamationmark.triangle")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.orange)
+            } else if let lastRefresh = lastMetricsRefresh {
+                Text("Updated \(lastRefresh, style: .relative) ago")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.tertiary)
+            }
+        }) {
             if let m = metrics {
                 VStack(spacing: 0) {
                     metricRow("CPU", value: String(format: "%.1f%%", m.cpu.percent), icon: "cpu")
@@ -434,6 +452,9 @@ struct DeviceDetailView: View {
     private func refreshMetrics() async {
         guard let deviceID = device.id else { return }
         metrics = try? await appState.fetchMetrics(for: deviceID)
+        if metrics != nil {
+            lastMetricsRefresh = Date()
+        }
     }
 
     private func connectToDevice() async {

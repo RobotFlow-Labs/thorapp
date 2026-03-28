@@ -103,6 +103,62 @@ final class FileTransferService {
         return result
     }
 
+    /// Verify a transferred file by comparing checksums.
+    func verifyTransfer(
+        deviceID: Int64,
+        localPath: String,
+        remotePath: String,
+        port: Int = 2222,
+        hostname: String = "localhost"
+    ) async throws -> Bool {
+        // Compute local checksum
+        let localProcess = Process()
+        localProcess.executableURL = URL(fileURLWithPath: "/usr/bin/shasum")
+        localProcess.arguments = ["-a", "256", localPath]
+        let localPipe = Pipe()
+        localProcess.standardOutput = localPipe
+        try localProcess.run()
+        localProcess.waitUntilExit()
+        let localData = localPipe.fileHandleForReading.readDataToEndOfFile()
+        let localHash = String(data: localData, encoding: .utf8)?.components(separatedBy: " ").first ?? ""
+
+        // Compute remote checksum via SSH
+        let sshProcess = Process()
+        sshProcess.executableURL = URL(fileURLWithPath: "/usr/bin/ssh")
+        sshProcess.arguments = [
+            "-o", "StrictHostKeyChecking=accept-new",
+            "-p", "\(port)",
+            "jetson@\(hostname)",
+            "sha256sum \(remotePath) 2>/dev/null | cut -d' ' -f1"
+        ]
+        let remotePipe = Pipe()
+        sshProcess.standardOutput = remotePipe
+        try sshProcess.run()
+        sshProcess.waitUntilExit()
+        let remoteData = remotePipe.fileHandleForReading.readDataToEndOfFile()
+        let remoteHash = (String(data: remoteData, encoding: .utf8) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+
+        let verified = !localHash.isEmpty && localHash == remoteHash
+
+        // Update DB record
+        if let db = appState.db {
+            try await db.writer.write { [deviceID, localHash, verified] dbConn in
+                try TransferRecord
+                    .filter(Column("deviceID") == deviceID)
+                    .order(Column("createdAt").desc)
+                    .limit(1)
+                    .fetchAll(dbConn)
+                    .forEach { var record = $0
+                        record.verified = verified
+                        record.checksum = localHash
+                        try record.update(dbConn)
+                    }
+            }
+        }
+
+        return verified
+    }
+
     // MARK: - Process Runner
 
     private func runTransferProcess(
