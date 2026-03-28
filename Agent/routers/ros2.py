@@ -193,6 +193,17 @@ async def ros2_bag_record(payload: dict):
     topics = payload.get("topics", [])
     output = payload.get("output", "/tmp/thor_bag")
 
+    # Validate output path — must be in known safe directories
+    allowed_output_dirs = ["/tmp", "/home/jetson/bags", "/opt/ros2_bags"]
+    real_output = os.path.realpath(output)
+    if not any(real_output.startswith(d) for d in allowed_output_dirs):
+        return JSONResponse(status_code=403, content={"error": "Output path must be in /tmp, /home/jetson/bags, or /opt/ros2_bags"})
+
+    # Validate topic names
+    for topic in topics:
+        if not _validate_ros2_name(topic):
+            return JSONResponse(status_code=400, content={"error": f"Invalid topic name: {topic}"})
+
     cmd = ["ros2", "bag", "record", "-o", output]
     if topics:
         cmd.extend(topics)

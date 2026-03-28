@@ -113,8 +113,11 @@ async def anima_status():
 @router.post("/stop")
 async def anima_stop(payload: dict):
     """Stop an ANIMA pipeline."""
-    pipeline_name = payload.get("pipeline_name", "default")
+    import re
+    pipeline_name = re.sub(r'[^a-zA-Z0-9\-]', '', payload.get("pipeline_name", "default")) or "default"
     compose_path = os.path.join(ANIMA_PIPELINES_DIR, f"{pipeline_name}.yaml")
+    if not os.path.realpath(compose_path).startswith(os.path.realpath(ANIMA_PIPELINES_DIR)):
+        return JSONResponse(status_code=403, content={"error": "Path traversal blocked"})
 
     if not os.path.exists(compose_path):
         return JSONResponse(status_code=404, content={"error": f"Pipeline {pipeline_name} not found"})

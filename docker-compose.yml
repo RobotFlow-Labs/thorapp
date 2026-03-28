@@ -9,7 +9,7 @@ services:
     hostname: jetson-thor-sim
     ports:
       - "2222:22"      # SSH
-      - "8470:8470"    # Agent API (for direct testing; normally tunneled)
+      - "127.0.0.1:8470:8470"    # Agent API (for direct testing; normally tunneled)
     volumes:
       - jetson-data:/home/jetson
       - ./Agent:/opt/thor-agent:ro
@@ -33,7 +33,7 @@ services:
     hostname: jetson-orin-sim
     ports:
       - "2223:22"
-      - "8471:8470"
+      - "127.0.0.1:8471:8470"
     volumes:
       - orin-data:/home/jetson
       - ./Agent:/opt/thor-agent:ro

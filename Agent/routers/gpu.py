@@ -123,6 +123,13 @@ async def tensorrt_convert(payload: dict):
     if not output:
         output = onnx_path.rsplit(".", 1)[0] + ".trt"
 
+    # Validate paths — must be within allowed model directories
+    allowed_dirs = [MODELS_DIR, "/home/jetson/models", "/tmp/models"]
+    for path in [onnx_path, output]:
+        real = os.path.realpath(path)
+        if not any(real.startswith(os.path.realpath(d)) for d in allowed_dirs):
+            return JSONResponse(status_code=403, content={"error": f"Path must be in allowed model directories: {allowed_dirs}"})
+
     cmd = ["trtexec", f"--onnx={onnx_path}", f"--saveEngine={output}"]
     if fp16:
         cmd.append("--fp16")

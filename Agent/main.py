@@ -155,19 +155,37 @@ async def exec_command(payload: dict):
     if len(command) > 2000:
         return JSONResponse(status_code=400, content={"error": "Command too long (max 2000 chars)"})
 
-    # Allowlist of safe command prefixes
+    # Allowlist of safe command prefixes (specific subcommands, not broad prefixes)
     ALLOWED_PREFIXES = [
-        "ls", "cat", "head", "tail", "grep", "find", "wc", "sort", "df", "du",
+        # Read-only system inspection
+        "ls", "cat", "head", "tail", "grep", "wc", "sort", "df", "du",
         "free", "uptime", "uname", "hostname", "whoami", "id", "date", "env",
         "echo", "pwd", "which", "file", "stat", "lsblk", "lscpu", "lsusb",
-        "ip", "ifconfig", "ss", "netstat", "ping", "traceroute", "dig", "nslookup",
-        "ps", "top", "htop", "nvidia-smi", "tegrastats", "nvpmodel", "jetson_clocks",
-        "docker", "ros2", "colcon",
-        "systemctl status", "systemctl list-units", "journalctl",
-        "dpkg", "apt list", "pip3 list",
+        "ip addr", "ip link", "ip route", "ifconfig",
+        "ss", "netstat", "ping", "traceroute", "dig", "nslookup",
+        "ps", "top", "htop",
+        # Jetson-specific (read-only)
+        "nvidia-smi", "tegrastats", "nvpmodel -q", "nvpmodel -l",
+        "jetson_clocks --show",
+        # Docker (read-only subcommands only)
+        "docker ps", "docker inspect", "docker logs", "docker stats",
+        "docker images", "docker info", "docker version",
+        "docker start", "docker stop", "docker restart",
+        # ROS2 (read-only subcommands only)
+        "ros2 node list", "ros2 topic list", "ros2 topic echo", "ros2 topic info",
+        "ros2 service list", "ros2 param list", "ros2 lifecycle nodes",
+        "ros2 lifecycle get", "ros2 bag info",
+        # System info (read-only)
+        "systemctl status", "systemctl list-units", "systemctl is-active",
+        "journalctl",
+        "dpkg -l", "dpkg --list", "apt list",
+        "pip3 list", "pip3 show",
+        # Hardware inspection
         "v4l2-ctl", "i2cdetect", "i2cget",
+        # Checksums
         "sha256sum", "md5sum", "cksum",
-        "python3 -c", "python3 --version",
+        # Version checks only
+        "python3 --version",
     ]
 
     # Check command against allowlist
@@ -184,7 +202,7 @@ async def exec_command(payload: dict):
             content={"error": f"Command not in allowlist. Allowed prefixes: {', '.join(sorted(set(p.split()[0] for p in ALLOWED_PREFIXES)))}"}
         )
 
-    # Block shell metacharacters that could enable injection
+    # Block shell metacharacters
     BLOCKED_CHARS = [";", "&&", "||", "|", "`", "$(", "${", ">", "<", "\n", "\r"]
     for char in BLOCKED_CHARS:
         if char in command:
@@ -196,6 +214,15 @@ async def exec_command(payload: dict):
     try:
         # Use shlex.split for safe argument parsing, no shell=True
         args = shlex.split(command)
+
+        # Block dangerous arguments (find -exec, -delete, etc.)
+        BLOCKED_ARGS = {"-exec", "-execdir", "-delete", "-fprint", "-fprintf"}
+        for arg in args:
+            if arg in BLOCKED_ARGS:
+                return JSONResponse(
+                    status_code=403,
+                    content={"error": f"Dangerous argument '{arg}' not allowed."}
+                )
         result = subprocess.run(args, capture_output=True, text=True, timeout=timeout)
         return {"exit_code": result.returncode, "stdout": result.stdout, "stderr": result.stderr}
     except ValueError as e:
