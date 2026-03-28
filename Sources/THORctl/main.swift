@@ -52,6 +52,31 @@ func run() async {
     case "ros2-topics":
         let port = args.count > 2 ? Int(args[2]) ?? 8470 : 8470
         await ros2Topics(port: port)
+    case "power", "power-mode":
+        let port = args.count > 2 ? Int(args[2]) ?? 8470 : 8470
+        await powerInfo(port: port)
+    case "sysinfo":
+        let port = args.count > 2 ? Int(args[2]) ?? 8470 : 8470
+        await systemInfoCmd(port: port)
+    case "disks":
+        let port = args.count > 2 ? Int(args[2]) ?? 8470 : 8470
+        await disksCmd(port: port)
+    case "cameras":
+        let port = args.count > 2 ? Int(args[2]) ?? 8470 : 8470
+        await camerasCmd(port: port)
+    case "gpu":
+        let port = args.count > 2 ? Int(args[2]) ?? 8470 : 8470
+        await gpuCmd(port: port)
+    case "usb":
+        let port = args.count > 2 ? Int(args[2]) ?? 8470 : 8470
+        await usbCmd(port: port)
+    case "network":
+        let port = args.count > 2 ? Int(args[2]) ?? 8470 : 8470
+        await networkCmd(port: port)
+    case "ros2-echo":
+        let port = args.count > 2 ? Int(args[2]) ?? 8470 : 8470
+        let topic = args.count > 3 ? args[3] : "/chatter"
+        await ros2EchoCmd(port: port, topic: topic)
     case "screenshot":
         let output = args.count > 2 ? args[2] : "thor-screenshot.png"
         await takeScreenshot(outputPath: output)
@@ -309,6 +334,113 @@ func ros2Topics(port: Int) async {
     } catch {
         print("Error: \(error.localizedDescription)")
     }
+}
+
+// MARK: - New Jetson Control Commands
+
+func powerInfo(port: Int) async {
+    let client = AgentClient(port: port)
+    do {
+        let pm = try await client.powerMode()
+        let fan = try await client.fanStatus()
+        let clocks = try await client.powerClocks()
+        print("Power Mode: \(pm.currentMode)")
+        if let modes = pm.modes {
+            for mode in modes {
+                let marker = mode.modeId == pm.currentMode ? ">>>" : "   "
+                print("  \(marker) [\(mode.modeId)] \(mode.name)")
+            }
+        }
+        print("Clocks:     \(clocks.enabled ? "LOCKED (max performance)" : "Dynamic")")
+        print("Fan:        \(Int(fan.speedPercent))% (PWM: \(fan.currentPwm)/255)")
+    } catch { print("Error: \(error.localizedDescription)") }
+}
+
+func systemInfoCmd(port: Int) async {
+    let client = AgentClient(port: port)
+    do {
+        let s = try await client.systemInfo()
+        print("Model:      \(s.model)")
+        print("Hostname:   \(s.hostname)")
+        print("OS:         \(s.osRelease)")
+        print("Kernel:     \(s.kernel)")
+        print("Arch:       \(s.architecture)")
+        print("JetPack:    \(s.l4tVersion ?? "N/A")")
+        print("Uptime:     \(s.uptime)")
+    } catch { print("Error: \(error.localizedDescription)") }
+}
+
+func disksCmd(port: Int) async {
+    let client = AgentClient(port: port)
+    do {
+        let d = try await client.disks()
+        print(String(format: "%-20s %-8s %-8s %-8s %s", "MOUNT", "SIZE", "USED", "AVAIL", "USE%"))
+        for fs in d.filesystems {
+            print(String(format: "%-20s %-8s %-8s %-8s %s", fs.mount, fs.size, fs.used, fs.available, fs.percent))
+        }
+    } catch { print("Error: \(error.localizedDescription)") }
+}
+
+func camerasCmd(port: Int) async {
+    let client = AgentClient(port: port)
+    do {
+        let c = try await client.cameras()
+        print("Cameras (\(c.count)):")
+        for cam in c.cameras {
+            print("  [\(cam.type)] \(cam.name) — \(cam.device)")
+        }
+    } catch { print("Error: \(error.localizedDescription)") }
+}
+
+func gpuCmd(port: Int) async {
+    let client = AgentClient(port: port)
+    do {
+        let g = try await client.gpuDetail()
+        print("GPU:        \(g.gpuName)")
+        print("CUDA:       \(g.cudaVersion ?? "N/A")")
+        print("TensorRT:   \(g.tensorrtVersion ?? "N/A")")
+        print("Memory:     \(g.memoryUsedMb)/\(g.memoryTotalMb) MB")
+        print("Temp:       \(Int(g.temperatureC))°C")
+        print("Power:      \(String(format: "%.1f", g.powerDrawW)) W")
+        let m = try await client.modelList()
+        if m.count > 0 {
+            print("Models (\(m.count)):")
+            for model in m.models { print("  [\(model.format)] \(model.name)") }
+        }
+    } catch { print("Error: \(error.localizedDescription)") }
+}
+
+func usbCmd(port: Int) async {
+    let client = AgentClient(port: port)
+    do {
+        let u = try await client.usbDevices()
+        print("USB Devices (\(u.count)):")
+        for dev in u.devices { print("  \(dev.vendorProduct) \(dev.description)") }
+    } catch { print("Error: \(error.localizedDescription)") }
+}
+
+func networkCmd(port: Int) async {
+    let client = AgentClient(port: port)
+    do {
+        let n = try await client.networkInterfaces()
+        print(String(format: "%-12s %-6s %-18s %s", "IFACE", "STATE", "IP", "MAC"))
+        for iface in n.interfaces {
+            let ip = iface.addresses?.first { $0.family == "inet" }?.address ?? "—"
+            print(String(format: "%-12s %-6s %-18s %s", iface.name, iface.state ?? "?", ip, iface.mac ?? ""))
+        }
+    } catch { print("Error: \(error.localizedDescription)") }
+}
+
+func ros2EchoCmd(port: Int, topic: String) async {
+    let client = AgentClient(port: port)
+    do {
+        let r = try await client.ros2TopicEcho(topic: topic)
+        if let msg = r.message, !msg.isEmpty {
+            print(msg)
+        } else {
+            print(r.error ?? "No message received")
+        }
+    } catch { print("Error: \(error.localizedDescription)") }
 }
 
 // MARK: - Screenshot

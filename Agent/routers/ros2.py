@@ -8,12 +8,26 @@ from process_manager import process_manager
 
 router = APIRouter(prefix="/v1/ros2", tags=["ros2"])
 
+# ROS2 environment setup
+ROS2_SETUP = "/opt/ros/humble/setup.bash"
+ROS2_ENV = {**os.environ, "ROS_LOG_DIR": "/tmp/ros_logs", "HOME": os.environ.get("HOME", "/home/jetson")}
+
+
+def _ros2_cmd(args: list[str], timeout: int = 10) -> subprocess.CompletedProcess:
+    """Run a ROS2 command with proper environment sourcing."""
+    cmd = f"source {ROS2_SETUP} 2>/dev/null && {' '.join(args)}"
+    return subprocess.run(
+        ["bash", "-c", cmd],
+        capture_output=True, text=True, timeout=timeout,
+        env=ROS2_ENV,
+    )
+
 
 @router.get("/nodes")
 async def ros2_nodes():
     """List ROS2 nodes."""
     try:
-        result = subprocess.run(["ros2", "node", "list"], capture_output=True, text=True, timeout=10)
+        result = _ros2_cmd(["ros2", "node", "list"])
         nodes = [n.strip() for n in result.stdout.strip().split("\n") if n.strip()]
         return {"nodes": nodes, "count": len(nodes)}
     except FileNotFoundError:
@@ -24,7 +38,7 @@ async def ros2_nodes():
 async def ros2_topics():
     """List ROS2 topics with types."""
     try:
-        result = subprocess.run(["ros2", "topic", "list", "-t"], capture_output=True, text=True, timeout=10)
+        result = _ros2_cmd(["ros2", "topic", "list", "-t"])
         topics = []
         for line in result.stdout.strip().split("\n"):
             if line.strip():
@@ -41,7 +55,7 @@ async def ros2_topics():
 async def ros2_services():
     """List ROS2 services with types."""
     try:
-        result = subprocess.run(["ros2", "service", "list", "-t"], capture_output=True, text=True, timeout=10)
+        result = _ros2_cmd(["ros2", "service", "list", "-t"])
         services = []
         for line in result.stdout.strip().split("\n"):
             if line.strip():
@@ -92,15 +106,12 @@ async def ros2_launches():
 async def ros2_lifecycle():
     """List lifecycle-managed nodes."""
     try:
-        result = subprocess.run(["ros2", "lifecycle", "nodes"], capture_output=True, text=True, timeout=10)
+        result = _ros2_cmd(["ros2", "lifecycle", "nodes"])
         nodes = []
         for name in result.stdout.strip().split("\n"):
             if name.strip():
                 # Get state for each
-                state_result = subprocess.run(
-                    ["ros2", "lifecycle", "get", name.strip()],
-                    capture_output=True, text=True, timeout=5
-                )
+                state_result = _ros2_cmd(["ros2", "lifecycle", "get", name.strip()])
                 state = state_result.stdout.strip() if state_result.returncode == 0 else "unknown"
                 nodes.append({"name": name.strip(), "state": state})
         return {"nodes": nodes}
@@ -122,10 +133,7 @@ async def ros2_lifecycle_transition(payload: dict):
         return JSONResponse(status_code=400, content={"error": f"Invalid transition. Use: {valid_transitions}"})
 
     try:
-        result = subprocess.run(
-            ["ros2", "lifecycle", "set", node, transition],
-            capture_output=True, text=True, timeout=10
-        )
+        result = _ros2_cmd(["ros2", "lifecycle", "set", node, transition])
         return {"node": node, "transition": transition, "success": result.returncode == 0, "output": result.stdout}
     except FileNotFoundError:
         return JSONResponse(status_code=500, content={"error": "ROS2 not installed"})
@@ -138,10 +146,7 @@ async def ros2_topic_echo(payload: dict):
     if not topic:
         return JSONResponse(status_code=400, content={"error": "topic required"})
     try:
-        result = subprocess.run(
-            ["ros2", "topic", "echo", "--once", topic],
-            capture_output=True, text=True, timeout=10
-        )
+        result = _ros2_cmd(["ros2", "topic", "echo", "--once", topic])
         return {"topic": topic, "message": result.stdout, "error": result.stderr if result.returncode != 0 else None}
     except (FileNotFoundError, subprocess.TimeoutExpired) as e:
         return {"topic": topic, "message": None, "error": str(e)}
@@ -157,10 +162,7 @@ async def ros2_topic_pub(payload: dict):
     if not topic or not msg_type:
         return JSONResponse(status_code=400, content={"error": "topic and type required"})
     try:
-        result = subprocess.run(
-            ["ros2", "topic", "pub", "--once", topic, msg_type, data],
-            capture_output=True, text=True, timeout=10
-        )
+        result = _ros2_cmd(["ros2", "topic", "pub", "--once", topic, msg_type, data])
         return {"topic": topic, "type": msg_type, "success": result.returncode == 0}
     except FileNotFoundError:
         return {"success": False, "error": "ROS2 not installed"}

@@ -135,18 +135,21 @@ struct ANIMATests {
 
     // MARK: - ROS2 Introspection
 
-    @Test("Fetch ROS2 nodes from agent")
+    @Test("Fetch ROS2 nodes from agent (live talker running)")
     func ros2Nodes() async throws {
         let client = AgentClient(port: 8470)
         let response = try await client.ros2Nodes()
-        // ROS2 not installed in Docker sim, should get error
-        #expect(response.error != nil || response.nodes.isEmpty)
+        // With demo talker running, we should find /talker node
+        #expect(response.count >= 1)
+        #expect(response.nodes.contains("/talker"))
     }
 
-    @Test("Fetch ROS2 topics from agent")
+    @Test("Fetch ROS2 topics from agent (live /chatter topic)")
     func ros2Topics() async throws {
         let client = AgentClient(port: 8470)
         let response = try await client.ros2Topics()
-        #expect(response.error != nil || response.topics.isEmpty)
+        // With demo talker running, /chatter should exist
+        #expect(response.count >= 1)
+        #expect(response.topics.contains { $0.name == "/chatter" })
     }
 }
