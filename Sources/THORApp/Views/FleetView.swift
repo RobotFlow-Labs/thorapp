@@ -114,6 +114,15 @@ struct FleetView: View {
                 Task { await batchAction("disconnect") }
             }
             Divider()
+            Section("ANIMA") {
+                Button("Check ANIMA Modules") {
+                    Task { await batchAction("anima-modules") }
+                }
+                Button("Stop All Pipelines", role: .destructive) {
+                    Task { await batchAction("anima-stop") }
+                }
+            }
+            Divider()
             Button("Clear Selection") {
                 selectedDeviceIDs.removeAll()
             }
@@ -248,6 +257,31 @@ struct FleetView: View {
             case "disconnect":
                 await appState.connector?.disconnect(deviceID: deviceID)
                 batchResults[deviceID] = "Disconnected"
+            case "anima-modules":
+                if let client = appState.connector?.agentClient(for: deviceID) {
+                    do {
+                        let response = try await client.animaModules()
+                        batchResults[deviceID] = "\(response.count) modules"
+                    } catch {
+                        batchResults[deviceID] = "Error: \(error.localizedDescription)"
+                    }
+                } else {
+                    batchResults[deviceID] = "Not connected"
+                }
+            case "anima-stop":
+                if let client = appState.connector?.agentClient(for: deviceID) {
+                    do {
+                        let status = try await client.animaStatus()
+                        for pipeline in status.pipelines where pipeline.status == "running" {
+                            _ = try await client.animaStop(pipelineName: pipeline.name)
+                        }
+                        batchResults[deviceID] = "Pipelines stopped"
+                    } catch {
+                        batchResults[deviceID] = "Error: \(error.localizedDescription)"
+                    }
+                } else {
+                    batchResults[deviceID] = "Not connected"
+                }
             default:
                 break
             }

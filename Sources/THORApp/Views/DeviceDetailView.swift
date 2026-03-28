@@ -77,6 +77,13 @@ struct DeviceDetailView: View {
                         } else {
                             notConnectedPlaceholder
                         }
+                    case .history:
+                        if let id = device.id {
+                            VStack(alignment: .leading, spacing: 16) {
+                                EventTimelineView(deviceID: id)
+                                TransferHistoryView(deviceID: id)
+                            }
+                        }
                     }
                 }
                 .padding(20)
@@ -458,6 +465,7 @@ private enum DetailTab: String, CaseIterable {
     case ros2
     case docker
     case logs
+    case history
 
     var label: String {
         switch self {
@@ -468,6 +476,7 @@ private enum DetailTab: String, CaseIterable {
         case .ros2: "ROS2"
         case .docker: "Docker"
         case .logs: "Logs"
+        case .history: "History"
         }
     }
 
@@ -480,6 +489,7 @@ private enum DetailTab: String, CaseIterable {
         case .ros2: "point.3.connected.trianglepath.dotted"
         case .docker: "shippingbox"
         case .logs: "doc.text"
+        case .history: "clock.arrow.circlepath"
         }
     }
 }
