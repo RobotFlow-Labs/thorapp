@@ -1,213 +1,308 @@
-# THOR — Mac-to-Jetson Robotics Control Plane
+# THOR — Jetson Control Center for macOS
 
 <p align="center">
   <img src="Assets/jetson-thor.png" alt="NVIDIA Jetson Thor" width="600"/>
 </p>
 
 <p align="center">
-  <strong>The first fully open-source macOS app for connecting Macs to NVIDIA Jetson devices.</strong>
+  <strong>The first open-source macOS app to manage NVIDIA Jetson devices.</strong>
   <br/>
-  <em>Deploy ANIMA AI modules. Control Docker & ROS2. Monitor fleets. No terminal needed.</em>
+  <em>Power modes, Docker, ROS2, cameras, GPIO, AI models, ANIMA pipelines — all from your Mac.</em>
 </p>
 
 <p align="center">
-  <a href="#quick-start">Quick Start</a> &bull;
-  <a href="#features">Features</a> &bull;
-  <a href="#anima-modules">ANIMA Modules</a> &bull;
-  <a href="#cli">CLI (thorctl)</a> &bull;
-  <a href="#architecture">Architecture</a> &bull;
-  <a href="#development">Development</a>
+  <a href="https://github.com/RobotFlow-Labs/thorapp/actions"><img src="https://github.com/RobotFlow-Labs/thorapp/actions/workflows/ci.yml/badge.svg" alt="CI"/></a>
+  <img src="https://img.shields.io/badge/platform-macOS%2014%2B-blue" alt="macOS 14+"/>
+  <img src="https://img.shields.io/badge/swift-6.2-orange" alt="Swift 6.2"/>
+  <img src="https://img.shields.io/badge/tests-71%20passing-green" alt="71 tests"/>
+  <img src="https://img.shields.io/badge/endpoints-50-purple" alt="50 API endpoints"/>
+  <img src="https://img.shields.io/badge/license-MIT-lightgrey" alt="MIT License"/>
 </p>
 
 ---
 
-## Quick Start
+## Install
+
+### Homebrew (recommended)
 
 ```bash
-# Clone and build
+brew tap RobotFlow-Labs/tap
+brew install thorapp
+```
+
+This installs both the **THOR.app** GUI and the **thorctl** CLI.
+
+### From Source
+
+```bash
 git clone https://github.com/RobotFlow-Labs/thorapp.git
 cd thorapp
-make build
-
-# Start Jetson simulators (Docker)
-make docker-up
-
-# Run tests (50 tests across 7 suites)
-make test
-
-# Package and launch the app
-make run
-
-# Or install the CLI
-make install-cli
-thorctl health 8470
-thorctl modules 8470
+make build        # Build all targets
+make install-cli  # Install thorctl to /usr/local/bin
+make run          # Package .app bundle and launch
 ```
+
+### Requirements
+
+- macOS 14+ (Sonoma) on Apple Silicon
+- Swift 6.2+ (`xcode-select --install`)
+- Docker Desktop (for Jetson simulators — optional for real hardware)
+
+---
+
+## What THOR Does
+
+THOR replaces SSH + terminal workflows with a native macOS control center for your Jetson devices.
+
+### Connect
+
+```bash
+# Add your Jetson (GUI or CLI)
+thorctl connect 192.168.1.100
+# Or use the built-in Docker simulators
+docker compose up -d
+thorctl connect localhost 8470
+```
+
+### Control
+
+The app provides 12 feature panels organized into 4 groups:
+
+| DEVICE | RUNTIME | OPERATIONS | OBSERVE |
+|--------|---------|------------|---------|
+| Overview | Docker | Files | Logs |
+| System Info | ROS2 | Deploy | History |
+| Power & Thermal | ANIMA | GPU & Models | |
+| Hardware | | | |
+
+### Manage from Terminal
+
+```bash
+thorctl health              # Agent health check
+thorctl sysinfo             # System info (model, kernel, JetPack, uptime)
+thorctl power               # Power mode, clocks, fan speed
+thorctl cameras             # List cameras (CSI, USB, ZED)
+thorctl gpu                 # GPU info, CUDA, TensorRT, models
+thorctl docker              # List Docker containers
+thorctl ros2-nodes          # List ROS2 nodes
+thorctl ros2-topics         # List ROS2 topics
+thorctl ros2-echo /chatter  # Echo a live ROS2 topic
+thorctl modules             # List ANIMA AI modules
+thorctl network             # Network interfaces
+thorctl disks               # Storage usage
+thorctl usb                 # USB devices
+thorctl exec "uname -a"     # Run any command
+thorctl watch               # Live metrics dashboard
+thorctl screenshot          # Capture screen for debugging
+```
+
+25 commands total. Run `thorctl help` for the full list.
+
+---
 
 ## Features
 
-### 8-Tab Device Control
+### Power & Thermal Management
+- **Power modes**: Switch between MAXN, 30W, 15W via nvpmodel
+- **Jetson clocks**: Lock/unlock frequencies for max performance
+- **Fan control**: Adjustable PWM speed slider
+- **Thermal monitoring**: Live temperature gauges with color-coded alerts
 
-| Tab | What it does |
-|-----|-------------|
-| **Overview** | Live CPU, memory, disk, GPU metrics with auto-refresh and staleness indicators |
-| **ANIMA** | Browse AI modules, compose pipelines, deploy with TensorRT, monitor status |
-| **Files** | rsync delta sync, scp upload, drag-and-drop, SHA-256 verification |
-| **Deploy** | Saved deploy profiles with preflight checks and step-by-step execution |
-| **ROS2** | Node, topic, and service inspector with message types |
-| **Docker** | Container list, start/stop/restart with confirmation, log viewer |
-| **Logs** | System + agent log streaming with keyword filter and severity coloring |
-| **History** | Event timeline + transfer history with verification status |
+### Hardware Detection
+- **Cameras**: Auto-detect CSI, USB, and ZED cameras
+- **GPIO**: Pin state visualization with direction indicators
+- **I2C**: Bus scanning with device address discovery
+- **USB**: Full device enumeration
+- **Serial**: Port detection (ttyUSB, ttyACM, ttyTHS)
 
-### Fleet Management
-- Grid view with health rollup badges
-- Environment filter (lab/field/staging/demo) + search
-- Multi-select batch actions: health refresh, disconnect, ANIMA module check, pipeline stop
-- Per-device result reporting
+### Docker Container Management
+- List, start, stop, restart containers with confirmation dialogs
+- View container logs
+- Image management (list, pull)
+- NVIDIA Container Runtime support
+
+### ROS2 Full Lifecycle
+- **Nodes**: List active nodes
+- **Topics**: List with message types, echo live messages
+- **Services**: List with service types
+- **Launch**: Start/stop launch files
+- **Lifecycle**: Node state management (configure, activate, deactivate)
+- **Bags**: Record, stop, list, play rosbags
+
+### ANIMA AI Module Deployment
+- Browse module registry (PETRA, CHRONOS, PYGMALION)
+- Check Jetson platform compatibility
+- Compose docker-compose pipelines with TensorRT backend
+- Deploy with one click, monitor per-container health
+
+### GPU & Model Management
+- CUDA version, TensorRT version
+- GPU memory usage gauge
+- TensorRT engine file listing
+- Model inventory (ONNX, TRT, PT, SafeTensors)
+
+### File Transfer
+- rsync delta sync + scp upload
+- Drag-and-drop with progress tracking
+- SHA-256 checksum verification
+- Transfer history
+
+### System Administration
+- Kernel, L4T, JetPack version info
+- Package management (apt update/upgrade)
+- User management
+- Storage monitoring with per-filesystem usage bars
+- Network interface listing with IP/MAC
+- WiFi scanning and connection
 
 ### Security
-- **Trust-On-First-Use (TOFU)**: SSH host key fingerprint displayed and confirmed during enrollment
-- **Keychain**: All credentials stored in macOS Keychain, never plaintext
-- **Localhost-only agent**: API bound to 127.0.0.1, accessed via SSH tunnel
-- **Confirmation dialogs**: Reboot, delete, container stop require explicit confirmation
-- **Auto-reconnect**: Exponential backoff (2-32s) with configurable retry limits
+- **Trust-On-First-Use**: SSH host key fingerprint verification
+- **Keychain**: All credentials in macOS Keychain
+- **Localhost agent**: API bound to 127.0.0.1, accessed via SSH tunnel
+- **Confirmations**: Reboot, delete, container stop require explicit confirmation
+- **Auto-reconnect**: Exponential backoff (2-32s)
 
-### Onboarding
-- 3-step welcome flow with prerequisite checks (SSH, rsync, Docker, Keychain, database)
-- Quick Add presets for Docker simulators
-- SSH key generation (ed25519) with public key clipboard copy
-- Network discovery via mDNS and ARP scanning
-
-## ANIMA Modules
-
-THOR is designed to deploy [ANIMA](https://github.com/AIFLOWLABS) AI modules to Jetson devices:
-
-```
-                    ┌─────────────────────────────────┐
-  THOR (Mac)        │  ANIMA Module (Jetson)           │
-  ────────────      │  ┌─────────────────────────────┐ │
-  Browse modules    │  │ Docker container             │ │
-  Compose pipeline  │  │ TensorRT backend             │ │
-  Deploy via SSH ──►│  │ ROS2 topics (in/out)         │ │
-  Monitor health    │  │ Health: /anima/<mod>/health   │ │
-                    │  └─────────────────────────────┘ │
-                    └─────────────────────────────────┘
-```
-
-**Included simulated modules**: PETRA (depth perception), CHRONOS (tracking), PYGMALION (VLA)
-
-Each module declares capabilities, ROS2 interfaces, hardware support, and performance profiles via `anima_module.yaml` manifests.
-
-## CLI
-
-```
-thorctl — THOR CLI for Jetson device management
-
-DEVICE COMMANDS:
-  devices, ls                   List registered devices
-  connect <host> [port]         Connect and show device info
-  health [port]                 Check agent health
-  capabilities, caps [port]     Show device capabilities
-  metrics [port]                Show system metrics
-  exec <port> <command>         Execute command on device
-  docker [port]                 List Docker containers
-
-ANIMA COMMANDS:
-  anima-modules, modules [port] List ANIMA modules
-  anima-status [port]           Show pipeline status
-  anima-deploy <port> <yaml>    Deploy ANIMA pipeline
-  anima-stop <port> [name]      Stop ANIMA pipeline
-
-ROS2 COMMANDS:
-  ros2-nodes [port]             List ROS2 nodes
-  ros2-topics [port]            List ROS2 topics
-
-MONITORING:
-  watch [port] [interval]       Live metrics dashboard
-  screenshot [filename]         Capture macOS screenshot
-```
+---
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────┐
-│  macOS                                              │
-│  ┌──────────────┐     XPC      ┌──────────────┐    │
-│  │  THOR.app    │◄────────────►│  THORCore    │    │
-│  │  (SwiftUI)   │              │  (Helper)    │    │
-│  └──────────────┘              └──────┬───────┘    │
-│  ┌──────────────┐                     │             │
-│  │  thorctl     │              SSH tunnel           │
-│  │  (CLI)       │                     │             │
-│  └──────────────┘                     │             │
-└───────────────────────────────────────┼─────────────┘
-                                        ▼
-┌───────────────────────────────────────────────────────┐
-│  Jetson Device                                        │
-│  ┌──────────────────┐                                 │
-│  │  THOR Agent       │  ◄── localhost:8470 HTTP/JSON  │
-│  │  (Python/FastAPI) │      18 endpoints              │
-│  └────────┬─────────┘                                 │
-│     ┌─────┴─────┬──────────┬──────────┬────────┐      │
-│     │ Docker    │ ROS2     │ GPU/sys  │ ANIMA  │      │
-│     │ runtime   │ tooling  │ metrics  │ modules│      │
-│     └───────────┴──────────┴──────────┴────────┘      │
-└───────────────────────────────────────────────────────┘
+macOS                                    Jetson Device
+┌──────────────────┐                    ┌──────────────────────┐
+│  THOR.app        │    SSH Tunnel      │  THOR Agent          │
+│  (SwiftUI)       │◄──────────────────►│  (Python/FastAPI)    │
+│                  │                    │  50 endpoints        │
+│  thorctl (CLI)   │    HTTP/JSON       │  10 router modules   │
+│  25 commands     │◄──────────────────►│  localhost:8470      │
+└──────────────────┘                    │                      │
+                                        │  ├ power.py          │
+                                        │  ├ system.py         │
+                                        │  ├ hardware.py       │
+                                        │  ├ docker.py         │
+                                        │  ├ ros2.py           │
+                                        │  ├ gpu.py            │
+                                        │  ├ anima.py          │
+                                        │  ├ network.py        │
+                                        │  ├ storage.py        │
+                                        │  └ logs.py           │
+                                        └──────────────────────┘
 ```
 
 ### Project Structure
 
 ```
-thorapp/                          72 files, 15k+ lines
-├── Package.swift                 4 targets: THORApp, THORCore, THORctl, THORShared
-├── Makefile                      Build, test, run, install, Docker, stats
+thorapp/
+├── Package.swift                # 4 Swift targets
+├── Makefile                     # build, test, run, install, Docker
 ├── Sources/
-│   ├── THORApp/                  SwiftUI application
-│   │   ├── THORApp.swift         @main — WindowGroup + MenuBarExtra + Settings
-│   │   ├── Models/AppState.swift @Observable root state
-│   │   ├── Views/                16 views (8 tabs + fleet + onboarding + settings + dialogs)
-│   │   └── Services/             DeviceConnector, PipelineDeployer, FileTransfer, AgentInstaller,
-│   │                             DebugBundleExporter, NetworkDiscovery, PrerequisiteChecker
-│   ├── THORCore/                 Background helper service
-│   ├── THORctl/                  CLI with 17 commands
-│   └── THORShared/               Shared library
-│       ├── Database/             GRDB manager + 3 migrations, 13 tables
-│       ├── Keychain/             macOS Keychain wrapper
-│       ├── Models/               11 record types + response models
-│       ├── SSH/                  Session manager (actor) + host key verifier
-│       └── Services/             Pipeline composer
-├── Tests/                        50 tests across 7 suites
-├── Agent/                        Python Jetson agent (18 endpoints)
-├── Docker/                       Jetson simulator (Thor + Orin)
-├── Scripts/                      Build, package, icon generation
-└── .github/workflows/ci.yml     CI/CD pipeline
+│   ├── THORApp/                 # SwiftUI macOS app
+│   │   ├── Views/               # 26 views (sidebar, panels, dialogs)
+│   │   └── Services/            # 8 services (connector, deployer, etc.)
+│   ├── THORShared/              # Shared library
+│   │   ├── Database/            # GRDB SQLite (13 tables)
+│   │   ├── Models/              # 50+ response types
+│   │   ├── SSH/                 # Session manager, host key verifier
+│   │   └── Keychain/            # macOS Keychain wrapper
+│   ├── THORctl/                 # CLI (25 commands)
+│   └── THORCore/                # Background helper
+├── Agent/                       # Python Jetson agent
+│   ├── main.py                  # FastAPI core
+│   ├── routers/                 # 10 endpoint modules
+│   ├── sim.py                   # Simulation state
+│   └── process_manager.py       # Background process tracking
+├── Tests/                       # 71 tests, 8 suites
+├── Docker/                      # Jetson simulator
+└── .github/workflows/           # CI/CD
 ```
+
+---
 
 ## Development
 
 ```bash
 make build          # Debug build
 make release        # Release build
-make test           # All 50 tests
+make test           # Run all 71 tests
 make test-unit      # Unit tests only (no Docker)
-make run            # Package and launch app
-make docker-up      # Start Jetson sims
+make run            # Package + launch app
+make docker-up      # Start Jetson simulators
+make docker-down    # Stop simulators
 make install-cli    # Install thorctl to /usr/local/bin
-make stats          # Show project stats
+make icon           # Generate app icon
+make stats          # Show project statistics
 make clean          # Clean build artifacts
 ```
 
+### Docker Simulators
+
+```bash
+docker compose up -d                 # Start Thor + Orin sims
+thorctl connect localhost 8470       # Connect to Thor sim
+thorctl connect localhost 8471       # Connect to Orin sim
+
+# Default SSH: jetson@localhost:2222 (password: jetson)
+# Thor sim:  port 2222 (SSH), port 8470 (agent)
+# Orin sim:  port 2223 (SSH), port 8471 (agent)
+```
+
+The sims include:
+- ROS2 Humble with demo talker/listener (live `/chatter` topic)
+- Docker CLI (Docker-in-Docker via socket mount)
+- Simulated JetPack 6.1, CUDA 12.6, TensorRT 10.3
+
+### Jetson Agent Installation
+
+On your real Jetson device:
+
+```bash
+# Copy agent files
+scp -r Agent/ jetson@YOUR_JETSON:/opt/thor-agent/
+
+# Install dependencies
+ssh jetson@YOUR_JETSON "pip3 install fastapi 'uvicorn[standard]' psutil pyyaml python-multipart"
+
+# Create systemd service
+ssh jetson@YOUR_JETSON "sudo tee /etc/systemd/system/thor-agent.service << EOF
+[Unit]
+Description=THOR Jetson Agent
+After=network.target
+
+[Service]
+Type=simple
+User=jetson
+ExecStart=/usr/bin/python3 /opt/thor-agent/main.py
+Restart=always
+Environment=THOR_AGENT_HOST=127.0.0.1
+Environment=THOR_AGENT_PORT=8470
+
+[Install]
+WantedBy=multi-user.target
+EOF"
+
+# Enable and start
+ssh jetson@YOUR_JETSON "sudo systemctl daemon-reload && sudo systemctl enable --now thor-agent"
+```
+
+---
+
 ## Supported Devices
 
-| Device | Status | JetPack |
-|--------|--------|---------|
-| Jetson Thor | Primary | 6.1+ |
-| Jetson Orin NX / Nano | Supported | 6.0+ |
-| Jetson AGX Orin | Supported | 5.1+ |
+| Device | JetPack | Status |
+|--------|---------|--------|
+| Jetson Thor | 7.0+ | Primary |
+| Jetson AGX Orin | 5.1+ | Supported |
+| Jetson Orin NX | 5.1+ | Supported |
+| Jetson Orin Nano | 5.1+ | Supported |
 
-## License
+---
 
-MIT License. See [LICENSE](LICENSE) for details.
+## Contributing
+
+1. Fork the repo
+2. `make build && make test`
+3. Submit a PR
+
+See [LICENSE](LICENSE) for MIT license details.
 
 ---
 
