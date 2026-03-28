@@ -194,6 +194,132 @@ async def exec_command(payload: dict):
         )
 
 
+# ── Docker Management ──────────────────────────────────────────────────
+
+@app.get("/v1/docker/containers")
+async def docker_containers():
+    """List Docker containers."""
+    try:
+        result = subprocess.run(
+            ["docker", "ps", "-a", "--format",
+             '{"id":"{{.ID}}","name":"{{.Names}}","image":"{{.Image}}",'
+             '"status":"{{.Status}}","state":"{{.State}}","ports":"{{.Ports}}"}'],
+            capture_output=True, text=True, timeout=10
+        )
+        if result.returncode != 0:
+            return {"containers": [], "error": result.stderr.strip()}
+
+        containers = []
+        for line in result.stdout.strip().split("\n"):
+            if line:
+                containers.append(json.loads(line))
+        return {"containers": containers}
+    except FileNotFoundError:
+        return {"containers": [], "error": "Docker not installed"}
+    except subprocess.TimeoutExpired:
+        return {"containers": [], "error": "Docker command timed out"}
+
+
+@app.post("/v1/docker/action")
+async def docker_action(payload: dict):
+    """Start, stop, restart, or remove a container."""
+    container = payload.get("container", "")
+    action = payload.get("action", "")
+
+    if not container or action not in ("start", "stop", "restart", "remove"):
+        return JSONResponse(
+            status_code=400,
+            content={"error": "container and action (start|stop|restart|remove) required"}
+        )
+
+    cmd = ["docker", action, container]
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        return {
+            "action": action,
+            "container": container,
+            "exit_code": result.returncode,
+            "stdout": result.stdout.strip(),
+            "stderr": result.stderr.strip(),
+        }
+    except subprocess.TimeoutExpired:
+        return JSONResponse(status_code=408, content={"error": "Timed out"})
+
+
+@app.get("/v1/docker/logs/{container}")
+async def docker_logs(container: str, tail: int = 100):
+    """Get container logs."""
+    try:
+        result = subprocess.run(
+            ["docker", "logs", "--tail", str(tail), "--timestamps", container],
+            capture_output=True, text=True, timeout=10
+        )
+        return {
+            "container": container,
+            "logs": result.stdout,
+            "stderr": result.stderr,
+        }
+    except FileNotFoundError:
+        return {"container": container, "logs": "", "error": "Docker not installed"}
+
+
+# ── Log Streaming ──────────────────────────────────────────────────────
+
+@app.get("/v1/logs/system")
+async def system_logs(lines: int = 100, unit: str = ""):
+    """Get system journal logs."""
+    cmd = ["journalctl", "--no-pager", "-n", str(lines), "--output", "short-iso"]
+    if unit:
+        cmd += ["-u", unit]
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+        return {
+            "source": unit or "system",
+            "lines": result.stdout.strip().split("\n") if result.stdout.strip() else [],
+            "count": len(result.stdout.strip().split("\n")) if result.stdout.strip() else 0,
+        }
+    except FileNotFoundError:
+        return {"source": unit or "system", "lines": [], "error": "journalctl not available"}
+
+
+@app.get("/v1/logs/agent")
+async def agent_logs(lines: int = 50):
+    """Get THOR agent logs (last N lines from stdout)."""
+    # In production, this reads from journalctl -u thor-agent
+    # In sim mode, return a placeholder
+    return {
+        "source": "thor-agent",
+        "lines": [f"[THOR Agent] Running on 127.0.0.1:8470 — agent v{AGENT_VERSION}"],
+        "count": 1,
+    }
+
+
+# ── Services ───────────────────────────────────────────────────────────
+
+@app.get("/v1/services")
+async def list_services():
+    """List systemd services (filtered to interesting ones)."""
+    try:
+        result = subprocess.run(
+            ["systemctl", "list-units", "--type=service", "--state=running",
+             "--no-pager", "--plain", "--no-legend"],
+            capture_output=True, text=True, timeout=10
+        )
+        services = []
+        for line in result.stdout.strip().split("\n"):
+            parts = line.split()
+            if len(parts) >= 4:
+                services.append({
+                    "name": parts[0],
+                    "load": parts[1],
+                    "active": parts[2],
+                    "sub": parts[3],
+                })
+        return {"services": services}
+    except FileNotFoundError:
+        return {"services": [], "error": "systemctl not available"}
+
+
 def _get_distro() -> str:
     """Get Linux distribution info."""
     try:

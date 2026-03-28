@@ -8,26 +8,49 @@ struct DeviceDetailView: View {
     @State private var metrics: AgentMetricsResponse?
     @State private var isConnecting = false
     @State private var errorMessage: String?
+    @State private var selectedTab = DetailTab.overview
 
     private var isConnected: Bool {
         appState.connectionStatus(for: device.id ?? 0) == .connected
     }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
-                deviceHeader
-                if let errorMessage {
-                    errorBanner(errorMessage)
+        VStack(spacing: 0) {
+            // Tab bar
+            tabBar
+            Divider()
+
+            // Tab content
+            ScrollView {
+                VStack(alignment: .leading, spacing: 24) {
+                    switch selectedTab {
+                    case .overview:
+                        deviceHeader
+                        if let errorMessage {
+                            errorBanner(errorMessage)
+                        }
+                        connectionCard
+                        if isConnected {
+                            metricsCard
+                        }
+                        capabilitiesCard
+                        quickActions
+                    case .docker:
+                        if isConnected, let id = device.id {
+                            DockerView(deviceID: id)
+                        } else {
+                            notConnectedPlaceholder
+                        }
+                    case .logs:
+                        if isConnected, let id = device.id {
+                            LogStreamView(deviceID: id)
+                        } else {
+                            notConnectedPlaceholder
+                        }
+                    }
                 }
-                connectionCard
-                if isConnected {
-                    metricsCard
-                }
-                capabilitiesCard
-                quickActions
+                .padding(20)
             }
-            .padding(20)
         }
         .navigationTitle(device.displayName)
         .task(id: device.id) {
@@ -36,6 +59,44 @@ struct DeviceDetailView: View {
                 await refreshMetrics()
             }
         }
+    }
+
+    private var tabBar: some View {
+        HStack(spacing: 0) {
+            ForEach(DetailTab.allCases, id: \.self) { tab in
+                Button {
+                    selectedTab = tab
+                } label: {
+                    Label(tab.label, systemImage: tab.icon)
+                        .font(.system(size: 12, weight: selectedTab == tab ? .semibold : .regular))
+                        .foregroundStyle(selectedTab == tab ? .primary : .secondary)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                        .background(selectedTab == tab ? Color.accentColor.opacity(0.1) : .clear)
+                        .clipShape(.rect(cornerRadius: 6))
+                }
+                .buttonStyle(.plain)
+            }
+            Spacer()
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 8)
+    }
+
+    private var notConnectedPlaceholder: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "link.badge.plus")
+                .font(.system(size: 32))
+                .foregroundStyle(.tertiary)
+            Text("Connect to this device to access this feature.")
+                .foregroundStyle(.secondary)
+                .font(.system(size: 14))
+            Button("Connect") {
+                Task { await connectToDevice() }
+            }
+            .buttonStyle(.bordered)
+        }
+        .frame(maxWidth: .infinity, minHeight: 200)
     }
 
     // MARK: - Header
@@ -323,5 +384,29 @@ struct DeviceDetailView: View {
             errorMessage = error.localizedDescription
         }
         isConnecting = false
+    }
+}
+
+// MARK: - Tab Enum
+
+private enum DetailTab: String, CaseIterable {
+    case overview
+    case docker
+    case logs
+
+    var label: String {
+        switch self {
+        case .overview: "Overview"
+        case .docker: "Docker"
+        case .logs: "Logs"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .overview: "cpu"
+        case .docker: "shippingbox"
+        case .logs: "doc.text"
+        }
     }
 }

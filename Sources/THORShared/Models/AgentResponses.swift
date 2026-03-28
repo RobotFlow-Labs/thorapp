@@ -154,3 +154,101 @@ public struct AgentExecResponse: Codable, Sendable {
         case stdout, stderr
     }
 }
+
+// MARK: - Docker
+
+/// Agent /v1/docker/containers response.
+public struct DockerContainersResponse: Codable, Sendable {
+    public let containers: [DockerContainer]
+    public let error: String?
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.containers = try container.decodeIfPresent([DockerContainer].self, forKey: .containers) ?? []
+        self.error = try container.decodeIfPresent(String.self, forKey: .error)
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case containers, error
+    }
+}
+
+public struct DockerContainer: Codable, Sendable, Identifiable {
+    public var id: String
+    public let name: String
+    public let image: String
+    public let status: String
+    public let state: String
+    public let ports: String
+}
+
+/// Agent /v1/docker/action response.
+public struct DockerActionResponse: Codable, Sendable {
+    public let action: String
+    public let container: String
+    public let exitCode: Int
+    public let stdout: String
+    public let stderr: String
+
+    enum CodingKeys: String, CodingKey {
+        case action, container
+        case exitCode = "exit_code"
+        case stdout, stderr
+    }
+}
+
+/// Agent /v1/docker/logs response.
+public struct DockerLogsResponse: Codable, Sendable {
+    public let container: String
+    public let logs: String
+    public let stderr: String?
+    public let error: String?
+}
+
+// MARK: - Logs
+
+/// Agent /v1/logs/system response.
+public struct LogStreamResponse: Codable, Sendable {
+    public let source: String
+    public let lines: [String]
+    public let count: Int
+    public let error: String?
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.source = try container.decode(String.self, forKey: .source)
+        self.lines = try container.decodeIfPresent([String].self, forKey: .lines) ?? []
+        self.count = try container.decodeIfPresent(Int.self, forKey: .count) ?? 0
+        self.error = try container.decodeIfPresent(String.self, forKey: .error)
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case source, lines, count, error
+    }
+}
+
+// MARK: - Services
+
+/// Agent /v1/services response.
+public struct ServicesResponse: Codable, Sendable {
+    public let services: [SystemService]
+    public let error: String?
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.services = try container.decodeIfPresent([SystemService].self, forKey: .services) ?? []
+        self.error = try container.decodeIfPresent(String.self, forKey: .error)
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case services, error
+    }
+}
+
+public struct SystemService: Codable, Sendable, Identifiable {
+    public var id: String { name }
+    public let name: String
+    public let load: String
+    public let active: String
+    public let sub: String
+}

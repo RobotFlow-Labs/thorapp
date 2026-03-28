@@ -27,6 +27,38 @@ public struct AgentClient: Sendable {
         try await post("/v1/exec", body: ["command": command, "timeout": timeout])
     }
 
+    // MARK: - Docker
+
+    public func dockerContainers() async throws -> DockerContainersResponse {
+        try await get("/v1/docker/containers")
+    }
+
+    public func dockerAction(container: String, action: String) async throws -> DockerActionResponse {
+        try await post("/v1/docker/action", body: ["container": container, "action": action])
+    }
+
+    public func dockerLogs(container: String, tail: Int = 100) async throws -> DockerLogsResponse {
+        try await get("/v1/docker/logs/\(container)?tail=\(tail)")
+    }
+
+    // MARK: - Logs
+
+    public func systemLogs(lines: Int = 100, unit: String = "") async throws -> LogStreamResponse {
+        var path = "/v1/logs/system?lines=\(lines)"
+        if !unit.isEmpty { path += "&unit=\(unit)" }
+        return try await get(path)
+    }
+
+    public func agentLogs(lines: Int = 50) async throws -> LogStreamResponse {
+        try await get("/v1/logs/agent?lines=\(lines)")
+    }
+
+    // MARK: - Services
+
+    public func services() async throws -> ServicesResponse {
+        try await get("/v1/services")
+    }
+
     // MARK: - HTTP Helpers
 
     private func get<T: Decodable>(_ path: String) async throws -> T {
