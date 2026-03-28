@@ -41,6 +41,21 @@ struct DeviceDetailView: View {
                         } else {
                             notConnectedPlaceholder
                         }
+                    case .anima:
+                        if isConnected {
+                            VStack(alignment: .leading, spacing: 16) {
+                                ANIMAModuleListView(device: device)
+                                PipelineStatusView(device: device)
+                            }
+                        } else {
+                            notConnectedPlaceholder
+                        }
+                    case .ros2:
+                        if isConnected, let id = device.id {
+                            ROS2InspectorView(deviceID: id)
+                        } else {
+                            notConnectedPlaceholder
+                        }
                     case .docker:
                         if isConnected, let id = device.id {
                             DockerView(deviceID: id)
@@ -403,16 +418,20 @@ struct DeviceDetailView: View {
 
 private enum DetailTab: String, CaseIterable {
     case overview
+    case anima
     case files
     case deploy
+    case ros2
     case docker
     case logs
 
     var label: String {
         switch self {
         case .overview: "Overview"
+        case .anima: "ANIMA"
         case .files: "Files"
         case .deploy: "Deploy"
+        case .ros2: "ROS2"
         case .docker: "Docker"
         case .logs: "Logs"
         }
@@ -421,8 +440,10 @@ private enum DetailTab: String, CaseIterable {
     var icon: String {
         switch self {
         case .overview: "cpu"
+        case .anima: "brain"
         case .files: "arrow.up.doc"
         case .deploy: "play.rectangle"
+        case .ros2: "point.3.connected.trianglepath.dotted"
         case .docker: "shippingbox"
         case .logs: "doc.text"
         }

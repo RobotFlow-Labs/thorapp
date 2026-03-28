@@ -16,6 +16,7 @@ final class AppState {
     let keychain = KeychainManager()
     let sshManager = SSHSessionManager()
     private(set) var connector: DeviceConnector?
+    private(set) var pipelineDeployer: PipelineDeployer?
     private var healthPollingTask: Task<Void, Never>?
 
     var selectedDevice: Device? {
@@ -28,6 +29,7 @@ final class AppState {
     func initializeDatabase() throws {
         db = try DatabaseManager(path: DatabaseManager.defaultPath)
         connector = DeviceConnector(appState: self)
+        pipelineDeployer = PipelineDeployer(appState: self)
     }
 
     // MARK: - Device CRUD
