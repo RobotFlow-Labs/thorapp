@@ -50,6 +50,10 @@ public enum JobType: String, Codable, CaseIterable, Sendable {
     case deploy
     case reboot
     case compatibilityFetch = "compatibility_fetch"
+    case animaDeploy = "anima_deploy"
+    case animaStop = "anima_stop"
+    case pipelineDeploy = "pipeline_deploy"
+    case pipelineStop = "pipeline_stop"
 }
 
 public enum JobStatus: String, Codable, CaseIterable, Sendable {

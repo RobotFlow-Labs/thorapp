@@ -252,3 +252,112 @@ public struct SystemService: Codable, Sendable, Identifiable {
     public let active: String
     public let sub: String
 }
+
+// MARK: - ANIMA
+
+/// Agent /v1/anima/modules response.
+public struct AnimaModulesResponse: Codable, Sendable {
+    public let modules: [ANIMAModuleManifest]
+    public let count: Int
+}
+
+/// Agent /v1/anima/deploy response.
+public struct AnimaDeployResponse: Codable, Sendable {
+    public let status: String
+    public let pipeline: String
+    public let exitCode: Int?
+    public let stdout: String?
+    public let stderr: String?
+    public let composePath: String?
+
+    enum CodingKeys: String, CodingKey {
+        case status, pipeline
+        case exitCode = "exit_code"
+        case stdout, stderr
+        case composePath = "compose_path"
+    }
+}
+
+/// Agent /v1/anima/status response.
+public struct AnimaStatusResponse: Codable, Sendable {
+    public let pipelines: [AnimaPipelineStatus]
+}
+
+public struct AnimaPipelineStatus: Codable, Sendable, Identifiable {
+    public var id: String { name }
+    public let name: String
+    public let composePath: String?
+    public let containers: [AnimaContainerStatus]?
+    public let status: String
+    public let error: String?
+
+    enum CodingKeys: String, CodingKey {
+        case name
+        case composePath = "compose_path"
+        case containers, status, error
+    }
+}
+
+public struct AnimaContainerStatus: Codable, Sendable {
+    public let Name: String?
+    public let Service: String?
+    public let State: String?
+    public let Status: String?
+}
+
+/// Agent /v1/anima/stop response.
+public struct AnimaStopResponse: Codable, Sendable {
+    public let status: String
+    public let pipeline: String
+    public let exitCode: Int?
+    public let stdout: String?
+    public let stderr: String?
+
+    enum CodingKeys: String, CodingKey {
+        case status, pipeline
+        case exitCode = "exit_code"
+        case stdout, stderr
+    }
+}
+
+// MARK: - ROS2
+
+/// Agent /v1/ros2/nodes response.
+public struct ROS2NodesResponse: Codable, Sendable {
+    public let nodes: [String]
+    public let count: Int
+    public let error: String?
+}
+
+/// Agent /v1/ros2/topics response.
+public struct ROS2TopicsResponse: Codable, Sendable {
+    public let topics: [ROS2Topic]
+    public let count: Int
+    public let error: String?
+}
+
+public struct ROS2Topic: Codable, Sendable, Identifiable {
+    public var id: String { name }
+    public let name: String
+    public let type: String
+}
+
+/// Agent /v1/ros2/services response.
+public struct ROS2ServicesResponse: Codable, Sendable {
+    public let services: [ROS2Service]
+    public let count: Int
+    public let error: String?
+}
+
+public struct ROS2Service: Codable, Sendable, Identifiable {
+    public var id: String { name }
+    public let name: String
+    public let type: String
+}
+
+/// Agent /v1/system/reboot response.
+public struct RebootResponse: Codable, Sendable {
+    public let status: String
+    public let message: String?
+    public let error: String?
+}

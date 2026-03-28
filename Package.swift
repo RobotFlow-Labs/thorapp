@@ -9,6 +9,7 @@ let package = Package(
     products: [
         .executable(name: "THORApp", targets: ["THORApp"]),
         .executable(name: "THORCore", targets: ["THORCore"]),
+        .executable(name: "thorctl", targets: ["THORctl"]),
     ],
     dependencies: [
         .package(url: "https://github.com/groue/GRDB.swift.git", from: "7.5.0"),
@@ -38,6 +39,13 @@ let package = Package(
             resources: [
                 .process("Resources"),
             ]
+        ),
+
+        // CLI tool for managing THOR devices from terminal
+        .executableTarget(
+            name: "THORctl",
+            dependencies: ["THORShared"],
+            path: "Sources/THORctl"
         ),
 
         // Tests

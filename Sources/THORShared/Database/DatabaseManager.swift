@@ -159,6 +159,52 @@ public final class DatabaseManager: Sendable {
             }
         }
 
+        migrator.registerMigration("v2_anima") { db in
+            // anima_modules
+            try db.create(table: "anima_modules") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("deviceID", .integer)
+                    .references("devices", onDelete: .cascade)
+                t.column("name", .text).notNull()
+                t.column("version", .text).notNull()
+                t.column("displayName", .text)
+                t.column("category", .text)
+                t.column("containerImage", .text).notNull()
+                t.column("capabilitiesJSON", .text)
+                t.column("hardwareSupportJSON", .text)
+                t.column("performanceJSON", .text)
+                t.column("installedAt", .datetime).notNull()
+            }
+
+            // pipelines
+            try db.create(table: "pipelines") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("name", .text).notNull()
+                t.column("description", .text)
+                t.column("modulesJSON", .text).notNull()
+                t.column("deviceID", .integer)
+                    .references("devices", onDelete: .cascade)
+                t.column("status", .text).notNull().defaults(to: "draft")
+                t.column("composeYAML", .text).notNull()
+                t.column("createdAt", .datetime).notNull()
+                t.column("updatedAt", .datetime).notNull()
+            }
+
+            // pipeline_runs
+            try db.create(table: "pipeline_runs") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("pipelineID", .integer)
+                    .references("pipelines", onDelete: .cascade)
+                t.column("deviceID", .integer)
+                    .references("devices", onDelete: .cascade)
+                t.column("status", .text).notNull().defaults(to: "deploying")
+                t.column("startedAt", .datetime)
+                t.column("finishedAt", .datetime)
+                t.column("errorSummary", .text)
+                t.column("logSnippet", .text)
+            }
+        }
+
         return migrator
     }
 

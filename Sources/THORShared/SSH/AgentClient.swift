@@ -59,6 +59,47 @@ public struct AgentClient: Sendable {
         try await get("/v1/services")
     }
 
+    // MARK: - ANIMA
+
+    public func animaModules() async throws -> AnimaModulesResponse {
+        try await get("/v1/anima/modules")
+    }
+
+    public func animaDeploy(composeYAML: String, pipelineName: String = "default") async throws -> AnimaDeployResponse {
+        try await post("/v1/anima/deploy", body: [
+            "compose_yaml": composeYAML,
+            "pipeline_name": pipelineName,
+        ])
+    }
+
+    public func animaStatus() async throws -> AnimaStatusResponse {
+        try await get("/v1/anima/status")
+    }
+
+    public func animaStop(pipelineName: String = "default") async throws -> AnimaStopResponse {
+        try await post("/v1/anima/stop", body: ["pipeline_name": pipelineName])
+    }
+
+    // MARK: - ROS2
+
+    public func ros2Nodes() async throws -> ROS2NodesResponse {
+        try await get("/v1/ros2/nodes")
+    }
+
+    public func ros2Topics() async throws -> ROS2TopicsResponse {
+        try await get("/v1/ros2/topics")
+    }
+
+    public func ros2Services() async throws -> ROS2ServicesResponse {
+        try await get("/v1/ros2/services")
+    }
+
+    // MARK: - System
+
+    public func reboot(confirm: String = "REBOOT_CONFIRMED") async throws -> RebootResponse {
+        try await post("/v1/system/reboot", body: ["confirm": confirm])
+    }
+
     // MARK: - HTTP Helpers
 
     private func get<T: Decodable>(_ path: String) async throws -> T {
