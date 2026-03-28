@@ -52,6 +52,13 @@ func run() async {
     case "ros2-topics":
         let port = args.count > 2 ? Int(args[2]) ?? 8470 : 8470
         await ros2Topics(port: port)
+    case "screenshot":
+        let output = args.count > 2 ? args[2] : "thor-screenshot.png"
+        await takeScreenshot(outputPath: output)
+    case "watch":
+        let port = args.count > 2 ? Int(args[2]) ?? 8470 : 8470
+        let interval = args.count > 3 ? Int(args[3]) ?? 5 : 5
+        await watchMetrics(port: port, interval: interval)
     case "version":
         print("thorctl 0.1.0 — THOR CLI for Jetson device management")
     case "help", "--help", "-h":
@@ -304,6 +311,56 @@ func ros2Topics(port: Int) async {
     }
 }
 
+// MARK: - Screenshot
+
+func takeScreenshot(outputPath: String) async {
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
+    process.arguments = ["-x", outputPath]  // -x = no sound
+
+    do {
+        try process.run()
+        process.waitUntilExit()
+        if process.terminationStatus == 0 {
+            let fullPath = FileManager.default.currentDirectoryPath + "/" + outputPath
+            print("Screenshot saved: \(fullPath)")
+        } else {
+            print("Screenshot failed (exit \(process.terminationStatus))")
+        }
+    } catch {
+        print("Error: \(error.localizedDescription)")
+    }
+}
+
+// MARK: - Watch (live metrics)
+
+func watchMetrics(port: Int, interval: Int) async {
+    let client = AgentClient(port: port)
+    print("Watching metrics on port \(port) every \(interval)s (Ctrl+C to stop)")
+    print(String(repeating: "-", count: 70))
+
+    while !Task.isCancelled {
+        do {
+            let m = try await client.metrics()
+            let line = String(format: "CPU: %5.1f%%  MEM: %4d/%4d MB (%4.0f%%)  DISK: %5.1f/%5.1f GB  LOAD: %s",
+                              m.cpu.percent,
+                              m.memory.usedMb, m.memory.totalMb, m.memory.percent,
+                              m.disk.usedGb, m.disk.totalGb,
+                              m.cpu.loadAvg.map { String(format: "%.2f", $0) }.joined(separator: " "))
+            print("\(timestamp()) \(line)")
+        } catch {
+            print("\(timestamp()) Error: \(error.localizedDescription)")
+        }
+        try? await Task.sleep(for: .seconds(interval))
+    }
+}
+
+private func timestamp() -> String {
+    let f = DateFormatter()
+    f.dateFormat = "HH:mm:ss"
+    return f.string(from: Date())
+}
+
 // MARK: - Help
 
 func printUsage() {
@@ -331,6 +388,10 @@ func printUsage() {
     ROS2 COMMANDS:
       ros2-nodes [port]             List ROS2 nodes
       ros2-topics [port]            List ROS2 topics
+
+    MONITORING:
+      watch [port] [interval]       Live metrics dashboard (default: 5s interval)
+      screenshot [filename]         Capture macOS screenshot for debugging
 
     OTHER:
       version                       Show version

@@ -9,6 +9,9 @@ struct DeviceDetailView: View {
     @State private var isConnecting = false
     @State private var errorMessage: String?
     @State private var selectedTab = DetailTab.overview
+    @State private var showingRebootConfirm = false
+    @State private var showingExportDebug = false
+    @State private var metricsTimer: Task<Void, Never>?
 
     private var isConnected: Bool {
         appState.connectionStatus(for: device.id ?? 0) == .connected
@@ -84,6 +87,28 @@ struct DeviceDetailView: View {
             await loadSnapshot()
             if isConnected {
                 await refreshMetrics()
+            }
+        }
+        .task(id: selectedTab) {
+            // Auto-refresh metrics when overview tab is visible
+            if selectedTab == .overview && isConnected {
+                while !Task.isCancelled {
+                    try? await Task.sleep(for: .seconds(5))
+                    if selectedTab == .overview && isConnected {
+                        await refreshMetrics()
+                    }
+                }
+            }
+        }
+        .destructiveConfirmation(
+            "Reboot Device",
+            message: "This will reboot \(device.displayName). The device will be temporarily unreachable.",
+            actionLabel: "Reboot",
+            isPresented: $showingRebootConfirm
+        ) {
+            Task {
+                guard let client = appState.connector?.agentClient(for: device.id ?? 0) else { return }
+                _ = try? await client.reboot()
             }
         }
     }
@@ -290,6 +315,15 @@ struct DeviceDetailView: View {
                     }
                     actionButton("Disconnect", systemImage: "xmark.circle", role: .destructive) {
                         Task { await appState.disconnectDevice(device) }
+                    }
+                    actionButton("Reboot", systemImage: "restart", role: .destructive) {
+                        showingRebootConfirm = true
+                    }
+                    actionButton("Export Debug", systemImage: "square.and.arrow.up", role: nil) {
+                        Task {
+                            let exporter = DebugBundleExporter(appState: appState)
+                            try? await exporter.export(for: device)
+                        }
                     }
                 } else {
                     Button {
