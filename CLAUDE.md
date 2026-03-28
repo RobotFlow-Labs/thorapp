@@ -5,6 +5,23 @@ THOR is a native macOS app (SwiftUI + Swift Concurrency) that serves as the cont
 
 **First fully open-source Mac app for Jetson device management.**
 
+## Rules & Skills (read on every session)
+
+| Rule File | Purpose |
+|-----------|---------|
+| `.claude/rules/boot-context.md` | Read NEXT_STEPS.md and git log before working |
+| `.claude/rules/next-steps-tracking.md` | Update NEXT_STEPS.md at session end |
+| `.claude/rules/thor-development.md` | Feature pipeline: endpoint → model → client → view → CLI → test |
+| `.claude/rules/thorctl-skill.md` | **Full thorctl command reference + 50 agent endpoint map** — use this to control and debug devices |
+
+**IMPORTANT**: Use `thorctl` to verify device state. Don't guess — query the real sim.
+```bash
+thorctl health 8470    # Check Thor sim
+thorctl caps 8470      # Full device capabilities
+thorctl power 8470     # Power mode, clocks, fan
+thorctl ros2-topics 8470  # Live ROS2 topics
+```
+
 ## Architecture
 
 ```
