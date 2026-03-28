@@ -47,6 +47,12 @@ struct DeviceDetailView: View {
                         } else {
                             notConnectedPlaceholder
                         }
+                    case .deploy:
+                        if isConnected {
+                            DeployView(device: device)
+                        } else {
+                            notConnectedPlaceholder
+                        }
                     case .logs:
                         if isConnected, let id = device.id {
                             LogStreamView(deviceID: id)
@@ -398,6 +404,7 @@ struct DeviceDetailView: View {
 private enum DetailTab: String, CaseIterable {
     case overview
     case files
+    case deploy
     case docker
     case logs
 
@@ -405,6 +412,7 @@ private enum DetailTab: String, CaseIterable {
         switch self {
         case .overview: "Overview"
         case .files: "Files"
+        case .deploy: "Deploy"
         case .docker: "Docker"
         case .logs: "Logs"
         }
@@ -414,6 +422,7 @@ private enum DetailTab: String, CaseIterable {
         switch self {
         case .overview: "cpu"
         case .files: "arrow.up.doc"
+        case .deploy: "play.rectangle"
         case .docker: "shippingbox"
         case .logs: "doc.text"
         }
