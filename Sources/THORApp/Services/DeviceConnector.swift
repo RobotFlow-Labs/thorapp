@@ -9,6 +9,7 @@ final class DeviceConnector {
     private var agentClients: [Int64: AgentClient] = [:]
     private var localPorts: [Int64: Int] = [:]
     private var nextLocalPort = 18470
+    private var reconnectAttempts: [Int64: Int] = [:]
 
     init(appState: AppState) {
         self.appState = appState
@@ -23,18 +24,17 @@ final class DeviceConnector {
         // Update state to connecting
         await updateConnectionState(deviceID: deviceID, status: .unknown, reason: "Connecting...")
 
-        // Step 1: Resolve credentials
+        // Step 1: Load device config
+        let config = await loadDeviceConfig(for: deviceID)
         let keyPath = appState.keychain.sshKeyPath(for: deviceID)
-
-        // For Docker sim, detect if hostname is localhost and use the mapped port
-        let (sshHost, sshPort) = resolveSSHTarget(device: device)
+        let (sshHost, sshPort) = resolveSSHTarget(device: device, config: config)
 
         // Step 2: SSH connect
         do {
             let session = try await appState.sshManager.connect(
                 deviceID: deviceID,
                 hostname: sshHost,
-                username: "jetson",  // TODO: persist per-device username
+                username: config.sshUsername,
                 port: sshPort,
                 keyPath: keyPath
             )
@@ -42,7 +42,7 @@ final class DeviceConnector {
             // Step 3: Open tunnel to agent API
             let localPort = nextLocalPort
             nextLocalPort += 1
-            try await session.openTunnel(localPort: localPort, remotePort: 8470)
+            try await session.openTunnel(localPort: localPort, remotePort: config.agentPort)
             localPorts[deviceID] = localPort
 
             // Give tunnel a moment to establish
@@ -147,26 +147,96 @@ final class DeviceConnector {
 
     // MARK: - Health Polling
 
-    /// Start periodic health checks for all connected devices.
+    /// Start periodic health checks for all connected devices with auto-reconnect.
     func startHealthPolling() async {
         while !Task.isCancelled {
             for (deviceID, _) in agentClients {
-                _ = await checkHealth(for: deviceID)
+                let healthy = await checkHealth(for: deviceID)
+                if !healthy {
+                    await attemptReconnect(deviceID: deviceID)
+                }
             }
             try? await Task.sleep(for: .seconds(15))
         }
     }
 
+    /// Attempt to reconnect a disconnected device with exponential backoff.
+    private func attemptReconnect(deviceID: Int64) async {
+        let config = await loadDeviceConfig(for: deviceID)
+        guard config.autoReconnect else { return }
+
+        let attempts = reconnectAttempts[deviceID] ?? 0
+        guard attempts < config.reconnectMaxRetries else {
+            await updateConnectionState(
+                deviceID: deviceID,
+                status: .disconnected,
+                reason: "Max reconnect attempts (\(config.reconnectMaxRetries)) reached"
+            )
+            return
+        }
+
+        // Exponential backoff: 2s, 4s, 8s, 16s, 32s
+        let delay = min(Double(2 << attempts), 32.0)
+        try? await Task.sleep(for: .seconds(delay))
+
+        guard let device = appState.devices.first(where: { $0.id == deviceID }) else { return }
+
+        reconnectAttempts[deviceID] = attempts + 1
+        await updateConnectionState(
+            deviceID: deviceID,
+            status: .unknown,
+            reason: "Reconnecting (attempt \(attempts + 1)/\(config.reconnectMaxRetries))..."
+        )
+
+        do {
+            // For direct connections, re-establish
+            if let existingPort = localPorts[deviceID] {
+                let client = AgentClient(port: existingPort)
+                let health = try await client.health()
+                if health.isHealthy {
+                    agentClients[deviceID] = client
+                    reconnectAttempts[deviceID] = 0
+                    await updateConnectionState(deviceID: deviceID, status: .connected)
+                    return
+                }
+            }
+
+            // Full reconnect
+            try await connect(device: device)
+            reconnectAttempts[deviceID] = 0
+        } catch {
+            // Will retry on next polling cycle
+        }
+    }
+
     // MARK: - Private
 
-    private func resolveSSHTarget(device: Device) -> (String, Int) {
-        // If hostname is localhost with a known sim port, use it
-        let host = device.hostname
-        if host == "localhost" || host == "127.0.0.1" {
-            // Default Docker sim port
-            return (host, 2222)
+    private func resolveSSHTarget(device: Device, config: DeviceConfig) -> (String, Int) {
+        return (device.hostname, config.sshPort)
+    }
+
+    private func loadDeviceConfig(for deviceID: Int64) async -> DeviceConfig {
+        if let db = appState.db {
+            if let config = try? await db.reader.read({ dbConn in
+                try DeviceConfig.filter(Column("deviceID") == deviceID).fetchOne(dbConn)
+            }) {
+                return config
+            }
         }
-        return (host, 22)
+        return DeviceConfig(deviceID: deviceID)
+    }
+
+    /// Save or update device config.
+    func saveDeviceConfig(_ config: DeviceConfig) async throws {
+        guard let db = appState.db else { return }
+        try await db.writer.write { [config] dbConn in
+            // Upsert
+            try DeviceConfig
+                .filter(Column("deviceID") == config.deviceID)
+                .deleteAll(dbConn)
+            var record = config
+            try record.insert(dbConn)
+        }
     }
 
     private func persistCapabilities(

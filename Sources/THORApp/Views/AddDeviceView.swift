@@ -189,7 +189,7 @@ struct AddDeviceView: View {
         do {
             try await appState.addDevice(device)
 
-            // Store credentials in Keychain
+            // Store credentials in Keychain and device config
             if let deviceID = appState.devices.last?.id {
                 switch authMethod {
                 case .sshKey:
@@ -198,6 +198,18 @@ struct AddDeviceView: View {
                 case .password:
                     try appState.keychain.storePassword(password, for: deviceID)
                 }
+
+                // Persist SSH config
+                let sshPort = Int(port) ?? 22
+                let config = DeviceConfig(
+                    deviceID: deviceID,
+                    sshUsername: username,
+                    sshPort: sshPort,
+                    agentPort: sshPort == 2222 ? 8470 : (sshPort == 2223 ? 8471 : 8470),
+                    autoConnect: true,
+                    autoReconnect: true
+                )
+                try await appState.connector?.saveDeviceConfig(config)
             }
 
             // Auto-connect: try direct agent connection for Docker sims

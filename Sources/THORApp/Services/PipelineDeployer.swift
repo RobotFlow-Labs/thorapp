@@ -27,7 +27,14 @@ final class PipelineDeployer {
         let platform = JetsonPlatform.from(model: snapshot?.jetsonModel ?? "Jetson")
 
         // Validate compatibility
-        let gpuMem = snapshot?.capabilitiesJSON.flatMap { _ in 0 } ?? 0  // TODO: parse from capabilities
+        // Parse GPU memory from capabilities if available
+        let gpuMem: Int
+        if let client = appState.connector?.agentClient(for: deviceID) {
+            let caps = try? await client.capabilities()
+            gpuMem = caps?.gpu.memoryTotalMb ?? 0
+        } else {
+            gpuMem = 0
+        }
         let issues = composer.validateCompatibility(modules: modules, platform: platform, gpuMemoryMB: gpuMem)
         let errors = issues.filter { $0.severity == .error }
         if !errors.isEmpty {

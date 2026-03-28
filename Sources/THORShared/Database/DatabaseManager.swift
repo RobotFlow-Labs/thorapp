@@ -205,6 +205,21 @@ public final class DatabaseManager: Sendable {
             }
         }
 
+        migrator.registerMigration("v3_device_config") { db in
+            try db.create(table: "device_configs") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("deviceID", .integer).notNull().unique()
+                    .references("devices", onDelete: .cascade)
+                t.column("sshUsername", .text).notNull().defaults(to: "jetson")
+                t.column("sshPort", .integer).notNull().defaults(to: 22)
+                t.column("agentPort", .integer).notNull().defaults(to: 8470)
+                t.column("autoConnect", .boolean).notNull().defaults(to: false)
+                t.column("autoReconnect", .boolean).notNull().defaults(to: true)
+                t.column("reconnectMaxRetries", .integer).notNull().defaults(to: 5)
+                t.column("healthCheckIntervalSec", .integer).notNull().defaults(to: 15)
+            }
+        }
+
         return migrator
     }
 

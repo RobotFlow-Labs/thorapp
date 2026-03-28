@@ -10,6 +10,7 @@ struct ANIMAModuleListView: View {
     @State private var errorMessage: String?
     @State private var showingComposer = false
     @State private var filterText = ""
+    @State private var devicePlatform: JetsonPlatform = .generic
 
     private var filteredModules: [ANIMAModuleManifest] {
         if filterText.isEmpty { return modules }
@@ -28,7 +29,13 @@ struct ANIMAModuleListView: View {
             }
             moduleGrid
         }
-        .task { await loadModules() }
+        .task {
+            // Load platform from device snapshot
+            if let snap = try? await appState.latestSnapshot(for: device.id ?? 0) {
+                devicePlatform = JetsonPlatform.from(model: snap.jetsonModel)
+            }
+            await loadModules()
+        }
         .sheet(isPresented: $showingComposer) {
             let selected = modules.filter { selectedModules.contains($0.name) }
             PipelineComposerView(device: device, modules: selected)
@@ -77,8 +84,7 @@ struct ANIMAModuleListView: View {
 
     private func moduleCard(_ module: ANIMAModuleManifest) -> some View {
         let isSelected = selectedModules.contains(module.name)
-        let platform = JetsonPlatform.from(model: "Jetson Thor") // TODO: from device snapshot
-        let isCompatible = module.supportsJetson(platform)
+        let isCompatible = module.supportsJetson(devicePlatform)
 
         return VStack(alignment: .leading, spacing: 8) {
             // Header
