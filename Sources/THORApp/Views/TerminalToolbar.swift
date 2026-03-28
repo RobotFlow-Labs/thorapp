@@ -1,7 +1,7 @@
 import SwiftUI
 import THORShared
 
-/// Toolbar buttons for opening terminals — Codex-style.
+/// Toolbar buttons for opening terminals — clean Codex-style with proper icons.
 struct TerminalToolbar: View {
     let device: Device
     @Environment(AppState.self) private var appState
@@ -9,47 +9,34 @@ struct TerminalToolbar: View {
     @State private var selectedTerminal: TerminalApp?
 
     var body: some View {
-        HStack(spacing: 4) {
-            // Primary terminal button with dropdown
+        HStack(spacing: 8) {
+            // SSH terminal with app picker dropdown
             Menu {
-                ForEach(availableTerminals) { terminal in
-                    Button {
-                        selectedTerminal = terminal
-                        openSSH(with: terminal)
-                    } label: {
-                        Label(terminal.name, systemImage: "terminal")
+                Section("Open SSH in...") {
+                    ForEach(availableTerminals) { terminal in
+                        Button {
+                            selectedTerminal = terminal
+                            openSSH(with: terminal)
+                        } label: {
+                            Text(terminal.name)
+                        }
                     }
                 }
+                Divider()
+                Button("Copy SSH Command") {
+                    let port = sshPort
+                    let cmd = "ssh -p \(port) jetson@\(device.hostname)"
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(cmd, forType: .string)
+                }
             } label: {
-                Label("Terminal", systemImage: "terminal")
-                    .labelStyle(.iconOnly)
+                Image(systemName: "apple.terminal.fill")
+                    .font(.system(size: 14))
             } primaryAction: {
                 openSSH(with: selectedTerminal)
             }
             .menuStyle(.borderlessButton)
-            .frame(width: 32)
-            .help("Open SSH terminal to \(device.displayName)")
-
-            // Quick SSH button
-            Button {
-                openSSH(with: selectedTerminal)
-            } label: {
-                Image(systemName: "rectangle.terminal")
-            }
-            .buttonStyle(.borderless)
-            .help("New SSH session")
-
-            // Local terminal at project directory
-            Button {
-                TerminalLauncher.openLocal(
-                    at: "~/",
-                    terminalApp: selectedTerminal
-                )
-            } label: {
-                Image(systemName: "plus.rectangle.on.rectangle")
-            }
-            .buttonStyle(.borderless)
-            .help("Open local terminal")
+            .help("SSH Terminal")
         }
         .onAppear {
             availableTerminals = TerminalLauncher.availableTerminals
@@ -57,14 +44,15 @@ struct TerminalToolbar: View {
         }
     }
 
-    private func openSSH(with terminal: TerminalApp?) {
-        let config = appState.connectionStates[device.id ?? 0]
+    private var sshPort: Int {
         let isLocalSim = device.hostname == "localhost" || device.hostname == "127.0.0.1"
-        let port = isLocalSim ? 2222 : 22 // TODO: read from DeviceConfig
+        return isLocalSim ? 2222 : 22
+    }
 
+    private func openSSH(with terminal: TerminalApp?) {
         TerminalLauncher.openSSH(
             host: device.hostname,
-            port: port,
+            port: sshPort,
             username: "jetson",
             terminalApp: terminal
         )

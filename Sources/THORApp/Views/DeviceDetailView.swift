@@ -19,75 +19,37 @@ struct DeviceDetailView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            // Tab bar
-            tabBar
-            Divider()
+        HSplitView {
+            // Grouped sidebar
+            List(selection: $selectedTab) {
+                Section("DEVICE") {
+                    sidebarItem(.overview)
+                    sidebarItem(.system)
+                    sidebarItem(.power)
+                    sidebarItem(.hardware)
+                }
+                Section("RUNTIME") {
+                    sidebarItem(.docker)
+                    sidebarItem(.ros2)
+                    sidebarItem(.anima)
+                }
+                Section("OPERATIONS") {
+                    sidebarItem(.files)
+                    sidebarItem(.deploy)
+                    sidebarItem(.gpu)
+                }
+                Section("OBSERVE") {
+                    sidebarItem(.logs)
+                    sidebarItem(.history)
+                }
+            }
+            .listStyle(.sidebar)
+            .frame(width: 160)
 
-            // Tab content
+            // Content
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
-                    switch selectedTab {
-                    case .overview:
-                        deviceHeader
-                        if let errorMessage {
-                            errorBanner(errorMessage)
-                        }
-                        connectionCard
-                        if isConnected {
-                            metricsCard
-                        }
-                        capabilitiesCard
-                        quickActions
-                    case .files:
-                        if isConnected {
-                            FileTransferView(device: device)
-                        } else {
-                            notConnectedPlaceholder
-                        }
-                    case .anima:
-                        if isConnected {
-                            VStack(alignment: .leading, spacing: 16) {
-                                ANIMAModuleListView(device: device)
-                                PipelineStatusView(device: device)
-                            }
-                        } else {
-                            notConnectedPlaceholder
-                        }
-                    case .ros2:
-                        if isConnected, let id = device.id {
-                            ROS2InspectorView(deviceID: id)
-                        } else {
-                            notConnectedPlaceholder
-                        }
-                    case .docker:
-                        if isConnected, let id = device.id {
-                            DockerView(deviceID: id)
-                        } else {
-                            notConnectedPlaceholder
-                        }
-                    case .deploy:
-                        if isConnected {
-                            DeployView(device: device)
-                        } else {
-                            notConnectedPlaceholder
-                        }
-                    case .logs:
-                        if isConnected, let id = device.id {
-                            LogStreamView(deviceID: id)
-                        } else {
-                            notConnectedPlaceholder
-                        }
-                    case .jetpack:
-                        JetPackView(device: device)
-                    case .history:
-                        if let id = device.id {
-                            VStack(alignment: .leading, spacing: 16) {
-                                EventTimelineView(deviceID: id)
-                                TransferHistoryView(deviceID: id)
-                            }
-                        }
-                    }
+                    featureContent
                 }
                 .padding(20)
             }
@@ -128,26 +90,54 @@ struct DeviceDetailView: View {
         }
     }
 
-    private var tabBar: some View {
-        HStack(spacing: 0) {
-            ForEach(DetailTab.allCases, id: \.self) { tab in
-                Button {
-                    selectedTab = tab
-                } label: {
-                    Label(tab.label, systemImage: tab.icon)
-                        .font(.system(size: 12, weight: selectedTab == tab ? .semibold : .regular))
-                        .foregroundStyle(selectedTab == tab ? .primary : .secondary)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 8)
-                        .background(selectedTab == tab ? Color.accentColor.opacity(0.1) : .clear)
-                        .clipShape(.rect(cornerRadius: 6))
+    private func sidebarItem(_ tab: DetailTab) -> some View {
+        Label(tab.label, systemImage: tab.icon)
+            .tag(tab)
+    }
+
+    @ViewBuilder
+    private var featureContent: some View {
+        switch selectedTab {
+        case .overview:
+            deviceHeader
+            if let errorMessage { errorBanner(errorMessage) }
+            connectionCard
+            if isConnected { metricsCard }
+            capabilitiesCard
+            quickActions
+        case .system:
+            if let id = device.id { SystemInfoView(deviceID: id) } else { notConnectedPlaceholder }
+        case .power:
+            if isConnected, let id = device.id { PowerView(deviceID: id) } else { notConnectedPlaceholder }
+        case .hardware:
+            if isConnected, let id = device.id { HardwareView(deviceID: id) } else { notConnectedPlaceholder }
+        case .docker:
+            if isConnected, let id = device.id { DockerView(deviceID: id) } else { notConnectedPlaceholder }
+        case .ros2:
+            if isConnected, let id = device.id { ROS2InspectorView(deviceID: id) } else { notConnectedPlaceholder }
+        case .anima:
+            if isConnected {
+                VStack(alignment: .leading, spacing: 16) {
+                    ANIMAModuleListView(device: device)
+                    PipelineStatusView(device: device)
                 }
-                .buttonStyle(.plain)
+            } else { notConnectedPlaceholder }
+        case .files:
+            if isConnected { FileTransferView(device: device) } else { notConnectedPlaceholder }
+        case .deploy:
+            if isConnected { DeployView(device: device) } else { notConnectedPlaceholder }
+        case .gpu:
+            if isConnected, let id = device.id { GPUView(deviceID: id) } else { notConnectedPlaceholder }
+        case .logs:
+            if isConnected, let id = device.id { LogStreamView(deviceID: id) } else { notConnectedPlaceholder }
+        case .history:
+            if let id = device.id {
+                VStack(alignment: .leading, spacing: 16) {
+                    EventTimelineView(deviceID: id)
+                    TransferHistoryView(deviceID: id)
+                }
             }
-            Spacer()
         }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 8)
     }
 
     private var notConnectedPlaceholder: some View {
@@ -567,25 +557,35 @@ struct DeviceDetailView: View {
 // MARK: - Tab Enum
 
 private enum DetailTab: String, CaseIterable {
+    // DEVICE
     case overview
+    case system
+    case power
+    case hardware
+    // RUNTIME
+    case docker
+    case ros2
     case anima
+    // OPERATIONS
     case files
     case deploy
-    case ros2
-    case jetpack
-    case docker
+    case gpu
+    // OBSERVE
     case logs
     case history
 
     var label: String {
         switch self {
         case .overview: "Overview"
+        case .system: "System"
+        case .power: "Power"
+        case .hardware: "Hardware"
+        case .docker: "Docker"
+        case .ros2: "ROS2"
         case .anima: "ANIMA"
         case .files: "Files"
         case .deploy: "Deploy"
-        case .ros2: "ROS2"
-        case .jetpack: "JetPack"
-        case .docker: "Docker"
+        case .gpu: "GPU & Models"
         case .logs: "Logs"
         case .history: "History"
         }
@@ -594,12 +594,15 @@ private enum DetailTab: String, CaseIterable {
     var icon: String {
         switch self {
         case .overview: "cpu"
+        case .system: "info.circle"
+        case .power: "bolt.fill"
+        case .hardware: "cable.connector"
+        case .docker: "shippingbox"
+        case .ros2: "point.3.connected.trianglepath.dotted"
         case .anima: "brain"
         case .files: "arrow.up.doc"
         case .deploy: "play.rectangle"
-        case .ros2: "point.3.connected.trianglepath.dotted"
-        case .jetpack: "memorychip"
-        case .docker: "shippingbox"
+        case .gpu: "gpu"
         case .logs: "doc.text"
         case .history: "clock.arrow.circlepath"
         }
