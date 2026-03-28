@@ -94,10 +94,160 @@ public struct AgentClient: Sendable {
         try await get("/v1/ros2/services")
     }
 
+    // MARK: - Power
+
+    public func powerMode() async throws -> PowerModeResponse {
+        try await get("/v1/power/mode")
+    }
+
+    public func setPowerMode(_ mode: Int) async throws -> PowerModeResponse {
+        try await post("/v1/power/mode", body: ["mode": mode])
+    }
+
+    public func powerClocks() async throws -> PowerClocksResponse {
+        try await get("/v1/power/clocks")
+    }
+
+    public func setPowerClocks(enable: Bool) async throws -> PowerClocksResponse {
+        try await post("/v1/power/clocks", body: ["enable": enable])
+    }
+
+    public func fanStatus() async throws -> FanStatusResponse {
+        try await get("/v1/power/fan")
+    }
+
+    public func setFanSpeed(_ pwm: Int) async throws -> FanStatusResponse {
+        try await post("/v1/power/fan", body: ["speed": pwm])
+    }
+
     // MARK: - System
+
+    public func systemInfo() async throws -> SystemInfoResponse {
+        try await get("/v1/system/info")
+    }
+
+    public func packages() async throws -> PackagesResponse {
+        try await get("/v1/system/packages")
+    }
+
+    public func packageAction(_ action: String) async throws -> PackageActionResponse {
+        try await post("/v1/system/packages", body: ["action": action])
+    }
+
+    public func users() async throws -> UsersResponse {
+        try await get("/v1/system/users")
+    }
 
     public func reboot(confirm: String = "REBOOT_CONFIRMED") async throws -> RebootResponse {
         try await post("/v1/system/reboot", body: ["confirm": confirm])
+    }
+
+    // MARK: - Storage
+
+    public func disks() async throws -> DisksResponse {
+        try await get("/v1/storage/disks")
+    }
+
+    public func swap() async throws -> SwapResponse {
+        try await get("/v1/storage/swap")
+    }
+
+    public func setSwap(action: String, file: String = "/swapfile") async throws -> SwapResponse {
+        try await post("/v1/storage/swap", body: ["action": action, "file": file])
+    }
+
+    // MARK: - Network
+
+    public func networkInterfaces() async throws -> NetworkInterfacesResponse {
+        try await get("/v1/network/interfaces")
+    }
+
+    public func wifiList() async throws -> WifiListResponse {
+        try await get("/v1/network/wifi")
+    }
+
+    public func wifiConnect(ssid: String, password: String) async throws -> WifiConnectResponse {
+        try await post("/v1/network/wifi", body: ["ssid": ssid, "password": password])
+    }
+
+    // MARK: - Hardware
+
+    public func cameras() async throws -> CameraListResponse {
+        try await get("/v1/hardware/cameras")
+    }
+
+    public func gpio() async throws -> GPIOResponse {
+        try await get("/v1/hardware/gpio")
+    }
+
+    public func i2cScan() async throws -> I2CResponse {
+        try await get("/v1/hardware/i2c")
+    }
+
+    public func usbDevices() async throws -> USBDevicesResponse {
+        try await get("/v1/hardware/usb")
+    }
+
+    public func serialPorts() async throws -> SerialPortsResponse {
+        try await get("/v1/hardware/serial")
+    }
+
+    // MARK: - GPU & Models
+
+    public func gpuDetail() async throws -> GPUDetailResponse {
+        try await get("/v1/gpu/info")
+    }
+
+    public func tensorrtEngines() async throws -> TensorRTEnginesResponse {
+        try await get("/v1/gpu/tensorrt/engines")
+    }
+
+    public func modelList() async throws -> ModelListResponse {
+        try await get("/v1/models/list")
+    }
+
+    // MARK: - Docker Extended
+
+    public func dockerImages() async throws -> DockerImagesResponse {
+        try await get("/v1/docker/images")
+    }
+
+    public func dockerPull(image: String) async throws -> DockerActionResponse {
+        try await post("/v1/docker/pull", body: ["image": image])
+    }
+
+    // MARK: - ROS2 Extended
+
+    public func ros2Launch(package: String, launchFile: String) async throws -> ROS2LaunchResponse {
+        try await post("/v1/ros2/launch", body: ["package": package, "launch_file": launchFile])
+    }
+
+    public func ros2LaunchStop(pid: Int) async throws -> ROS2LaunchResponse {
+        try await post("/v1/ros2/launch/stop", body: ["pid": pid])
+    }
+
+    public func ros2Launches() async throws -> ROS2LaunchesResponse {
+        try await get("/v1/ros2/launches")
+    }
+
+    public func ros2LifecycleNodes() async throws -> ROS2LifecycleNodesResponse {
+        try await get("/v1/ros2/lifecycle")
+    }
+
+    public func ros2TopicEcho(topic: String) async throws -> ROS2TopicEchoResponse {
+        try await post("/v1/ros2/topic/echo", body: ["topic": topic])
+    }
+
+    public func ros2BagList() async throws -> ROS2BagListResponse {
+        try await get("/v1/ros2/bags")
+    }
+
+    public func ros2BagRecord(topics: [String] = [], output: String = "/tmp/thor_bag") async throws -> ROS2LaunchResponse {
+        try await post("/v1/ros2/bag/record", body: ["topics": topics, "output": output] as [String: Any])
+    }
+
+    public func ros2BagStop(pid: Int) async throws -> ROS2LaunchResponse {
+        try await post("/v1/ros2/bag/stop", body: ["pid": pid])
     }
 
     // MARK: - HTTP Helpers
