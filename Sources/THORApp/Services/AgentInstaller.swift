@@ -29,8 +29,26 @@ final class AgentInstaller {
             return InstallResult(status: .alreadyInstalled, message: "Agent is already running and healthy")
         }
 
-        // Step 2: Copy agent package
+        // Step 2: Package and copy agent
         let agentDir = "/opt/thor-agent"
+        let agentSourceDir = Bundle.main.resourcePath.map { $0 + "/Agent" }
+            ?? ProcessInfo.processInfo.environment["THOR_AGENT_DIR"]
+            ?? ""
+
+        // SCP the agent if source exists locally
+        if !agentSourceDir.isEmpty && FileManager.default.fileExists(atPath: agentSourceDir + "/main.py") {
+            try await scpCopy(
+                localPath: agentSourceDir,
+                remotePath: "/tmp/thor-agent-upload",
+                host: sshHost, port: sshPort
+            )
+            _ = try await sshExec(
+                host: sshHost, port: sshPort,
+                command: "sudo mkdir -p \(agentDir) && sudo cp -R /tmp/thor-agent-upload/* \(agentDir)/ && sudo chown -R $(whoami) \(agentDir)"
+            )
+        }
+
+        // Install Python dependencies
         let installCommands = """
         sudo mkdir -p \(agentDir) && \
         sudo chown $(whoami) \(agentDir) && \
@@ -106,6 +124,23 @@ final class AgentInstaller {
         )
         let version = result.trimmingCharacters(in: .whitespacesAndNewlines)
         return version == "unknown" ? nil : version
+    }
+
+    private func scpCopy(localPath: String, remotePath: String, host: String, port: Int) async throws {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/scp")
+        process.arguments = [
+            "-r",
+            "-o", "StrictHostKeyChecking=accept-new",
+            "-P", "\(port)",
+            localPath,
+            "jetson@\(host):\(remotePath)",
+        ]
+        try process.run()
+        process.waitUntilExit()
+        if process.terminationStatus != 0 {
+            throw AgentInstallerError.installFailed("SCP failed with exit \(process.terminationStatus)")
+        }
     }
 
     private func sshExec(host: String, port: Int, command: String) async throws -> String {

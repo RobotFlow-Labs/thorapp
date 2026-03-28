@@ -103,7 +103,8 @@ public struct AgentClient: Sendable {
     // MARK: - HTTP Helpers
 
     private func get<T: Decodable>(_ path: String) async throws -> T {
-        let url = baseURL.appendingPathComponent(path)
+        // Use string concatenation to preserve query parameters
+        let url = URL(string: baseURL.absoluteString + path)!
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
         request.timeoutInterval = 10
@@ -123,7 +124,7 @@ public struct AgentClient: Sendable {
     }
 
     private func post<T: Decodable>(_ path: String, body: [String: Any]) async throws -> T {
-        let url = baseURL.appendingPathComponent(path)
+        let url = URL(string: baseURL.absoluteString + path)!
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")

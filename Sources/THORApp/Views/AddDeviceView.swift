@@ -16,12 +16,90 @@ struct AddDeviceView: View {
     @State private var isSaving = false
     @State private var errorMessage: String?
 
+    // Discovery
+    @State private var discovery = NetworkDiscovery()
+    @State private var showingDiscovery = false
+
+    // SSH Key
+    @State private var showingKeyGen = false
+    @State private var generatedKeyPath: String?
+
     var body: some View {
         VStack(spacing: 0) {
             Form {
+                // Discovery section
+                Section {
+                    HStack {
+                        Button("Scan Network") {
+                            showingDiscovery = true
+                            Task { await discovery.scan() }
+                        }
+                        .disabled(discovery.isScanning)
+
+                        if discovery.isScanning {
+                            ProgressView().controlSize(.small)
+                        }
+
+                        Spacer()
+
+                        // Quick presets for Docker sims
+                        Menu("Quick Add") {
+                            Button("Jetson Thor Sim (localhost:2222)") {
+                                displayName = "Jetson Thor Sim"
+                                hostname = "localhost"
+                                port = "2222"
+                                authMethod = .password
+                                password = "jetson"
+                            }
+                            Button("Jetson Orin Sim (localhost:2223)") {
+                                displayName = "Jetson Orin Sim"
+                                hostname = "localhost"
+                                port = "2223"
+                                authMethod = .password
+                                password = "jetson"
+                            }
+                        }
+                        .menuStyle(.borderedButton)
+                        .controlSize(.small)
+                    }
+
+                    if showingDiscovery && !discovery.discoveredDevices.isEmpty {
+                        ForEach(discovery.discoveredDevices) { device in
+                            Button {
+                                hostname = device.hostname
+                                displayName = device.displayName
+                                showingDiscovery = false
+                            } label: {
+                                HStack {
+                                    Image(systemName: "cpu")
+                                        .foregroundStyle(.secondary)
+                                    VStack(alignment: .leading) {
+                                        Text(device.displayName)
+                                            .font(.system(size: 13))
+                                        Text("\(device.hostname) — via \(device.source.rawValue)")
+                                            .font(.system(size: 11))
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    Spacer()
+                                    Image(systemName: "arrow.right")
+                                        .foregroundStyle(.tertiary)
+                                }
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    } else if showingDiscovery && !discovery.isScanning {
+                        Text("No Jetson devices found on the network. Use manual entry below.")
+                            .font(.system(size: 12))
+                            .foregroundStyle(.secondary)
+                    }
+                } header: {
+                    Text("Discovery")
+                }
+
                 Section("Device Info") {
                     TextField("Display Name", text: $displayName)
                     TextField("Hostname or IP", text: $hostname)
+                    TextField("SSH Port", text: $port)
                     Picker("Environment", selection: $environment) {
                         ForEach(DeviceEnvironment.allCases, id: \.self) { env in
                             Text(env.rawValue.capitalized).tag(env)
@@ -29,9 +107,8 @@ struct AddDeviceView: View {
                     }
                 }
 
-                Section("SSH Connection") {
+                Section("SSH Authentication") {
                     TextField("Username", text: $username)
-                    TextField("Port", text: $port)
                     Picker("Auth Method", selection: $authMethod) {
                         Text("SSH Key").tag(AuthMethod.sshKey)
                         Text("Password").tag(AuthMethod.password)
@@ -40,7 +117,28 @@ struct AddDeviceView: View {
 
                     switch authMethod {
                     case .sshKey:
-                        TextField("Key Path", text: $sshKeyPath)
+                        HStack {
+                            TextField("Key Path", text: $sshKeyPath)
+                            Button("Browse") {
+                                let panel = NSOpenPanel()
+                                panel.canChooseFiles = true
+                                panel.canChooseDirectories = false
+                                panel.directoryURL = URL(fileURLWithPath: NSHomeDirectory() + "/.ssh")
+                                if panel.runModal() == .OK, let url = panel.url {
+                                    sshKeyPath = url.path
+                                }
+                            }
+                            .controlSize(.small)
+                        }
+                        Button("Generate New SSH Key") {
+                            Task { await generateSSHKey() }
+                        }
+                        .controlSize(.small)
+                        if let keyPath = generatedKeyPath {
+                            Text("Key generated: \(keyPath)")
+                                .font(.system(size: 11))
+                                .foregroundStyle(.green)
+                        }
                     case .password:
                         SecureField("Password", text: $password)
                     }
@@ -72,8 +170,10 @@ struct AddDeviceView: View {
             }
             .padding(20)
         }
-        .frame(width: 480, height: 420)
+        .frame(width: 520, height: 560)
     }
+
+    // MARK: - Actions
 
     private func addDevice() async {
         isSaving = true
@@ -103,9 +203,8 @@ struct AddDeviceView: View {
             // Auto-connect: try direct agent connection for Docker sims
             if let saved = appState.devices.last {
                 let sshPort = Int(port) ?? 22
-                // For localhost, use the agent port directly (Docker port mapping)
                 if hostname == "localhost" || hostname == "127.0.0.1" {
-                    let agentPort = sshPort == 2222 ? 8470 : 8471
+                    let agentPort = sshPort == 2222 ? 8470 : (sshPort == 2223 ? 8471 : 8470)
                     try await appState.connectDevice(saved, directPort: agentPort)
                 }
             }
@@ -116,6 +215,30 @@ struct AddDeviceView: View {
         }
 
         isSaving = false
+    }
+
+    private func generateSSHKey() async {
+        let keyPath = NSHomeDirectory() + "/.ssh/thor_jetson_\(UUID().uuidString.prefix(8))"
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/ssh-keygen")
+        process.arguments = ["-t", "ed25519", "-f", keyPath, "-N", "", "-C", "thor@\(hostname)"]
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+            if process.terminationStatus == 0 {
+                sshKeyPath = keyPath
+                generatedKeyPath = keyPath
+
+                // Copy public key to pasteboard for easy setup
+                let pubKey = try String(contentsOfFile: keyPath + ".pub", encoding: .utf8)
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(pubKey, forType: .string)
+            }
+        } catch {
+            errorMessage = "Key generation failed: \(error.localizedDescription)"
+        }
     }
 }
 
