@@ -216,6 +216,43 @@ public struct AgentClient: Sendable {
         try await post("/v1/docker/pull", body: ["image": image])
     }
 
+    // MARK: - Registry
+
+    public func deviceRegistryStatus(registryAddress: String, scheme: RegistryScheme = .https) async throws -> DeviceRegistryStateResponse {
+        let encodedRegistry = registryAddress.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? registryAddress
+        return try await get("/v1/registry/status?registry=\(encodedRegistry)&scheme=\(scheme.rawValue)")
+    }
+
+    public func applyRegistry(
+        registryAddress: String,
+        scheme: RegistryScheme = .https,
+        caCertificatePEM: String?,
+        caCertificateBase64: String?,
+        username: String?,
+        password: String?
+    ) async throws -> DeviceRegistryApplyResponse {
+        try await post("/v1/registry/apply", body: [
+            "registry": registryAddress,
+            "scheme": scheme.rawValue,
+            "ca_certificate_pem": caCertificatePEM ?? "",
+            "ca_certificate_base64": caCertificateBase64 ?? "",
+            "username": username ?? "",
+            "password": password ?? "",
+        ])
+    }
+
+    public func validateDeviceRegistry(
+        registryAddress: String,
+        scheme: RegistryScheme = .https,
+        image: String? = nil
+    ) async throws -> DeviceRegistryValidationResponse {
+        try await post("/v1/registry/validate", body: [
+            "registry": registryAddress,
+            "scheme": scheme.rawValue,
+            "image": image ?? "",
+        ])
+    }
+
     // MARK: - ROS2 Extended
 
     public func ros2Launch(package: String, launchFile: String) async throws -> ROS2LaunchResponse {

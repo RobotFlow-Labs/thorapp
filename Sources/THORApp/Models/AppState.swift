@@ -136,6 +136,41 @@ final class AppState {
         return report
     }
 
+    func registryDeviceStatus(_ profile: RegistryProfile, on deviceID: Int64) async throws -> DeviceRegistryStateResponse {
+        let client = try registryDeviceClient(for: deviceID)
+        return try await client.deviceRegistryStatus(
+            registryAddress: profile.registryAddress,
+            scheme: profile.scheme
+        )
+    }
+
+    func applyRegistryProfile(_ profile: RegistryProfile, to deviceID: Int64) async throws -> DeviceRegistryApplyResponse {
+        let client = try registryDeviceClient(for: deviceID)
+        let certificateData = try registryCertificateData(for: profile)
+        let password = profile.id.flatMap { keychain.registryPassword(for: $0) }
+        return try await client.applyRegistry(
+            registryAddress: profile.registryAddress,
+            scheme: profile.scheme,
+            caCertificatePEM: certificateData.flatMap { String(data: $0, encoding: .utf8) },
+            caCertificateBase64: certificateData?.base64EncodedString(),
+            username: profile.username,
+            password: password
+        )
+    }
+
+    func validateRegistryProfile(
+        _ profile: RegistryProfile,
+        on deviceID: Int64,
+        image: String? = nil
+    ) async throws -> DeviceRegistryValidationResponse {
+        let client = try registryDeviceClient(for: deviceID)
+        return try await client.validateDeviceRegistry(
+            registryAddress: profile.registryAddress,
+            scheme: profile.scheme,
+            image: image
+        )
+    }
+
     func clearRegistryPassword(for profileID: Int64) {
         keychain.removeRegistrySecrets(for: profileID)
     }
@@ -202,6 +237,36 @@ final class AppState {
                 .filter(CompatibilitySnapshot.Columns.deviceID == deviceID)
                 .order(CompatibilitySnapshot.Columns.capturedAt.desc)
                 .fetchOne(dbConn)
+        }
+    }
+
+    private func registryDeviceClient(for deviceID: Int64) throws -> AgentClient {
+        guard let client = connector?.agentClient(for: deviceID) else {
+            throw RegistryDeviceIntegrationError.deviceNotConnected
+        }
+        return client
+    }
+
+    private func registryCertificateData(for profile: RegistryProfile) throws -> Data? {
+        guard let path = profile.caCertificatePath else { return nil }
+        let url = URL(fileURLWithPath: path)
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            throw RegistryDeviceIntegrationError.certificateMissing
+        }
+        return try Data(contentsOf: url)
+    }
+}
+
+enum RegistryDeviceIntegrationError: Error, LocalizedError {
+    case deviceNotConnected
+    case certificateMissing
+
+    var errorDescription: String? {
+        switch self {
+        case .deviceNotConnected:
+            return "Device is not connected. Connect the Jetson before applying registry settings."
+        case .certificateMissing:
+            return "The registry certificate file is missing. Re-import it before applying to a device."
         }
     }
 }

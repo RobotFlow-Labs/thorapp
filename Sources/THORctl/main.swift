@@ -21,6 +21,22 @@ func run() async {
     case "registry-validate":
         let identifier = args.count > 2 ? args[2] : ""
         await validateRegistry(identifier: identifier)
+    case "registry-device-status":
+        let port = args.count > 2 ? Int(args[2]) ?? 8470 : 8470
+        let registry = args.count > 3 ? args[3] : ""
+        await registryDeviceStatus(port: port, registry: registry)
+    case "registry-device-apply":
+        let port = args.count > 2 ? Int(args[2]) ?? 8470 : 8470
+        let registry = args.count > 3 ? args[3] : ""
+        let certPath = args.count > 4 ? args[4] : ""
+        let username = args.count > 5 ? args[5] : ""
+        let password = args.count > 6 ? args[6] : ""
+        await registryDeviceApply(port: port, registry: registry, certPath: certPath, username: username, password: password)
+    case "registry-device-preflight":
+        let port = args.count > 2 ? Int(args[2]) ?? 8470 : 8470
+        let registry = args.count > 3 ? args[3] : ""
+        let image = args.count > 4 ? args[4] : ""
+        await registryDevicePreflight(port: port, registry: registry, image: image)
     case "health":
         let port = args.count > 2 ? Int(args[2]) ?? 8470 : 8470
         await checkHealth(port: port)
@@ -420,6 +436,95 @@ func validateRegistry(identifier: String) async {
     }
 }
 
+func registryDeviceStatus(port: Int, registry: String) async {
+    guard !registry.isEmpty else {
+        print("Usage: thorctl registry-device-status <port> <registry>")
+        return
+    }
+
+    let client = AgentClient(port: port)
+    do {
+        let response = try await client.deviceRegistryStatus(registryAddress: registry)
+        print("Registry:       \(response.registry)")
+        print("Trusted:        \(response.trusted ? "yes" : "no")")
+        print("Authenticated:  \(response.authenticated ? "yes" : "no")")
+        print("Ready:          \(response.ready ? "yes" : "no")")
+        if let certificatePath = response.certificatePath {
+            print("Certificate:    \(certificatePath)")
+        }
+        print("Message:        \(response.message)")
+    } catch {
+        print("Error: \(error.localizedDescription)")
+    }
+}
+
+func registryDeviceApply(port: Int, registry: String, certPath: String, username: String, password: String) async {
+    guard !registry.isEmpty else {
+        print("Usage: thorctl registry-device-apply <port> <registry> <cert-path|-> [username] [password]")
+        return
+    }
+
+    let certificatePEM: String?
+    if certPath.isEmpty || certPath == "-" {
+        certificatePEM = nil
+    } else {
+        do {
+            certificatePEM = try String(contentsOfFile: certPath, encoding: .utf8)
+        } catch {
+            print("Error reading certificate: \(error.localizedDescription)")
+            return
+        }
+    }
+
+    let client = AgentClient(port: port)
+    do {
+        let response = try await client.applyRegistry(
+            registryAddress: registry,
+            caCertificatePEM: certificatePEM,
+            caCertificateBase64: certificatePEM?.data(using: .utf8)?.base64EncodedString(),
+            username: username.isEmpty ? nil : username,
+            password: password.isEmpty ? nil : password
+        )
+        print("Registry:       \(response.registry)")
+        print("Trusted:        \(response.trusted ? "yes" : "no")")
+        print("Authenticated:  \(response.authenticated ? "yes" : "no")")
+        print("Ready:          \(response.ready ? "yes" : "no")")
+        if !response.stdout.isEmpty {
+            print("STDOUT:         \(response.stdout)")
+        }
+        if !response.stderr.isEmpty {
+            print("STDERR:         \(response.stderr)")
+        }
+        print("Message:        \(response.message)")
+    } catch {
+        print("Error: \(error.localizedDescription)")
+    }
+}
+
+func registryDevicePreflight(port: Int, registry: String, image: String) async {
+    guard !registry.isEmpty else {
+        print("Usage: thorctl registry-device-preflight <port> <registry> [image]")
+        return
+    }
+
+    let client = AgentClient(port: port)
+    do {
+        let response = try await client.validateDeviceRegistry(
+            registryAddress: registry,
+            image: image.isEmpty ? nil : image
+        )
+        print("Registry: \(response.registry)")
+        print("Status:   \(response.status.rawValue)")
+        print("Ready:    \(response.ready ? "yes" : "no")")
+        print(String(repeating: "-", count: 60))
+        for stage in response.stages {
+            print("[\(stage.status.rawValue.uppercased())] \(stage.name): \(stage.message)")
+        }
+    } catch {
+        print("Error: \(error.localizedDescription)")
+    }
+}
+
 // MARK: - New Jetson Control Commands
 
 func powerInfo(port: Int) async {
@@ -591,6 +696,11 @@ func printUsage() {
       registries                    List saved OCI registry profiles
       connect <host> [port]         Connect and show device info
       registry-validate <id|name|host>  Validate a saved OCI registry profile
+      registry-device-status <port> <registry>   Show registry trust/auth state on a Jetson
+      registry-device-apply <port> <registry> <cert-path|-> [username] [password]
+                                   Apply registry trust/auth to a Jetson
+      registry-device-preflight <port> <registry> [image]
+                                   Validate device-side registry readiness
       health [port]                 Check agent health
       capabilities, caps [port]     Show device capabilities
       metrics [port]                Show system metrics

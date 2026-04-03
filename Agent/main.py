@@ -12,6 +12,7 @@ Bound to 127.0.0.1 only (accessed via SSH tunnel from Mac).
   /v1/network/*                               — interfaces, wifi
   /v1/hardware/*                              — cameras, GPIO, I2C, USB, serial
   /v1/docker/*                                — containers, images, logs
+  /v1/registry/*                              — registry trust, auth, readiness
   /v1/ros2/*                                  — nodes, topics, launch, lifecycle, bags
   /v1/gpu/*, /v1/models/*                     — CUDA, TensorRT, model management
   /v1/logs/*                                  — system, agent logs
@@ -34,7 +35,7 @@ import uvicorn
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from sim import sim_identity, get_distro
-from routers import power, system, storage, network, hardware, ros2, gpu, docker, logs, anima
+from routers import power, system, storage, network, hardware, ros2, gpu, docker, logs, anima, registry
 
 AGENT_VERSION = "0.1.0"
 
@@ -49,6 +50,7 @@ app.include_router(hardware.router)
 app.include_router(ros2.router)
 app.include_router(gpu.router)
 app.include_router(docker.router)
+app.include_router(registry.router)
 app.include_router(logs.router)
 app.include_router(anima.router)
 

@@ -41,6 +41,8 @@ final class PipelineDeployer {
             throw PipelineDeployerError.incompatible(errors.map(\.message).joined(separator: "; "))
         }
 
+        try await runRegistryPreflightIfNeeded(modules: modules, deviceID: deviceID)
+
         // Compose docker-compose YAML
         let yaml = composer.compose(modules: modules, platform: platform)
 
@@ -123,11 +125,31 @@ final class PipelineDeployer {
         let response = try await client.animaModules()
         return response.modules
     }
+
+    private func runRegistryPreflightIfNeeded(modules: [ANIMAModuleManifest], deviceID: Int64) async throws {
+        let imageReferences = modules.map(\.containerImage)
+
+        for image in imageReferences {
+            guard let profile = matchingRegistryProfile(for: image) else { continue }
+            let result = try await appState.validateRegistryProfile(profile, on: deviceID, image: image)
+            if result.status == .fail {
+                let message = result.stages.first(where: { $0.status == .fail })?.message ?? "Registry preflight failed for \(image)."
+                throw PipelineDeployerError.registryPreflightFailed(message)
+            }
+        }
+    }
+
+    private func matchingRegistryProfile(for image: String) -> RegistryProfile? {
+        appState.registryProfiles.first(where: { profile in
+            image.hasPrefix("\(profile.registryAddress)/") || image.hasPrefix("\(profile.host)/")
+        })
+    }
 }
 
 enum PipelineDeployerError: Error, LocalizedError {
     case deviceNotConnected
     case incompatible(String)
+    case registryPreflightFailed(String)
     case deployFailed(String)
     case stopFailed(String)
 
@@ -135,6 +157,7 @@ enum PipelineDeployerError: Error, LocalizedError {
         switch self {
         case .deviceNotConnected: "Device is not connected"
         case .incompatible(let reason): "Incompatible: \(reason)"
+        case .registryPreflightFailed(let reason): "Registry preflight failed: \(reason)"
         case .deployFailed(let err): "Deploy failed: \(err)"
         case .stopFailed(let err): "Stop failed: \(err)"
         }

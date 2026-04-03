@@ -2,13 +2,13 @@
 
 ## Last Updated: 2026-04-04
 
-## Status: v0.1.0 release ready; OCI registry trust foundation implemented for Shenzhen showcase
+## Status: v0.1.0 release ready; OCI registry trust now spans macOS foundation plus Jetson rollout/preflight for Shenzhen showcase
 
 ## Stats
 - 100+ files, 19,800+ lines
-- 74 tests, 9 suites, 0 failures
-- 50 agent endpoints, 27 CLI commands
-- Registry trust foundation now present in app, CLI, database, and tests
+- 76 tests, 9 suites, 0 failures
+- 53 agent endpoints, 30 CLI commands
+- Registry trust workflow now present across app, agent, CLI, database, and tests
 
 ## v0.1.0 Release Checklist
 - [x] All features implemented and tested
@@ -49,26 +49,39 @@
   - new registry workspace in the app shell
   - `thorctl registries` and `thorctl registry-validate`
   - registry-focused regression tests
+- Extended the feature from foundation to end-to-end Jetson rollout:
+  - new agent registry router for device status, apply, and preflight
+  - simulator-backed registry trust/auth state
+  - `AgentClient` device registry models + methods
+  - `AppState` helpers to apply/validate registry profiles on selected Jetsons
+  - ANIMA deploy preflight against saved registry profiles
+  - `thorctl registry-device-status`, `registry-device-apply`, and `registry-device-preflight`
+  - upgraded registry workspace with setup checklist, Jetson rollout, and preflight visibility
+  - additional integration tests for device-side registry apply + preflight
 - Verified the implementation against Docker sims:
   - `make docker-up`
   - `thorctl health 8470`
-  - `make test` → 74 tests passing across 9 suites
+  - `thorctl registry-device-apply 8470 registry.demo.local:5443 /tmp/thor-demo-registry.crt demo secret`
+  - `thorctl registry-device-preflight 8470 registry.demo.local:5443 registry.demo.local:5443/hello-world:latest`
+  - `make test` → 76 tests passing across 9 suites
+  - rebuilt and relaunched local `THORApp.app` for UI inspection
 
 ## Current Milestone
-- M2 — OCI registry trust foundation on macOS complete; Jetson-side rollout next
+- M3 — OCI registry trust integrated through Jetson rollout and deploy preflight; wizard/browser hardening next
 
 ## Shenzhen Showcase Track — 2026-04-23
 - [x] Feature PRD for OCI Registry Trust Manager
+- [x] Expand PRD with wizard, preflight board, recovery UX, and demo-safe flow
 - [ ] Review and approve v1 scope
 - [x] Add registry profile data model + persistence
 - [x] Add macOS certificate import/trust workflow
 - [x] Add registry management workspace UI
-- [ ] Add Jetson trust/auth application workflow
+- [x] Add Jetson trust/auth application workflow
 - [x] Add registry validation and demo-ready checks
 - [ ] Add registry-aware Docker pull and ANIMA deploy preflight
 - [ ] Add registry browser UI (catalog/tags/repository inspection)
 - [x] Add thorctl support for registry inspection/validation
-- [ ] Add end-to-end tests for secure registry flows across macOS + Jetson
+- [x] Add simulator-backed tests for secure registry flows across macOS + Jetson
 - [ ] Run Shenzhen demo rehearsal on Docker Registry v2
 - [ ] Run Shenzhen demo rehearsal on Zot
 
@@ -76,4 +89,4 @@
 - Need final product decision on whether v1 device-side readiness covers Docker only or Docker plus other OCI clients used in the showcase environment.
 - Need confirmation on acceptable service disruption when applying trust to a live device runtime.
 
-## Shenzhen Feature Readiness: 45%
+## Shenzhen Feature Readiness: 65%

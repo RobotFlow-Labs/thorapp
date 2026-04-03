@@ -205,6 +205,64 @@ public struct DockerLogsResponse: Codable, Sendable {
     public let error: String?
 }
 
+// MARK: - Registry
+
+public struct DeviceRegistryStateResponse: Codable, Sendable {
+    public let registry: String
+    public let trusted: Bool
+    public let authenticated: Bool
+    public let ready: Bool
+    public let needsRestart: Bool
+    public let certificatePath: String?
+    public let dockerConfigPath: String?
+    public let message: String
+
+    enum CodingKeys: String, CodingKey {
+        case registry, trusted, authenticated, ready, message
+        case needsRestart = "needs_restart"
+        case certificatePath = "certificate_path"
+        case dockerConfigPath = "docker_config_path"
+    }
+}
+
+public struct DeviceRegistryApplyResponse: Codable, Sendable {
+    public let registry: String
+    public let trusted: Bool
+    public let authenticated: Bool
+    public let ready: Bool
+    public let needsRestart: Bool
+    public let certificatePath: String?
+    public let stdout: String
+    public let stderr: String
+    public let message: String
+
+    enum CodingKeys: String, CodingKey {
+        case registry, trusted, authenticated, ready, stdout, stderr, message
+        case needsRestart = "needs_restart"
+        case certificatePath = "certificate_path"
+    }
+}
+
+public struct DeviceRegistryValidationStage: Codable, Sendable, Identifiable {
+    public let id = UUID()
+    public let name: String
+    public let status: RegistryValidationStatus
+    public let message: String
+
+    enum CodingKeys: String, CodingKey {
+        case name, status, message
+    }
+}
+
+public struct DeviceRegistryValidationResponse: Codable, Sendable {
+    public let registry: String
+    public let status: RegistryValidationStatus
+    public let trusted: Bool
+    public let authenticated: Bool
+    public let ready: Bool
+    public let stages: [DeviceRegistryValidationStage]
+}
+
 // MARK: - Logs
 
 /// Agent /v1/logs/system response.

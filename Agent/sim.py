@@ -50,6 +50,7 @@ _sim_state = {
     "power_mode": 0,
     "clocks_enabled": False,
     "fan_speed": 128,
+    "registry_configs": {},
 }
 
 

@@ -28,6 +28,7 @@ THOR is a native macOS app for managing NVIDIA Jetson devices. It already covers
 - THOR should own the full secure-registry workflow for both the Mac operator environment and the target Jetson devices.
 - MVP support should work with generic OCI Distribution API registries, explicitly validated against Docker Registry v2 and Zot.
 - v1 will support anonymous access and username/password authentication. Token-only and SSO flows are deferred.
+- v1 should feel guided and low-friction, not like a thin wrapper over manual PKI and Docker tasks.
 
 ## 1. Problem Statement & Motivation
 
@@ -204,18 +205,80 @@ Acceptance criteria:
 - AC-8.2: GIVEN a certificate rotation event WHEN I approve the new certificate THEN THOR updates the trusted certificate state without forcing profile re-creation.
 - AC-8.3: GIVEN a team member reviewing a registry profile WHEN they inspect its status THEN THOR shows when trust was last validated on the Mac and on each assigned device.
 
+### US-9 — Guided Setup Wizard
+
+As a THOR operator, I want a guided registry setup wizard so that I can complete trust, auth, and Jetson rollout without understanding low-level PKI or Docker configuration details.
+
+- Priority: P0
+- Effort: M
+- Dependencies: registry profile model, certificate parsing, trust install, device rollout actions, validation pipeline
+
+Acceptance criteria:
+
+- AC-9.1: GIVEN no registry profile exists WHEN I open the Registry workspace THEN THOR offers a primary “Set Up Registry” guided flow instead of dropping me into a blank detail form.
+- AC-9.2: GIVEN I use the wizard WHEN I move through registry type, certificate import, credentials, device selection, and validation THEN THOR preserves progress and clearly shows what remains.
+- AC-9.3: GIVEN the wizard completes successfully WHEN I reach the final step THEN THOR shows a ready state with next actions such as browse, test pull, or deploy.
+
+### US-10 — Smart Defaults, Templates & Test Pull
+
+As a robotics engineer, I want registry templates, autofill defaults, and a dedicated test pull action so that I can get to a working artifact quickly and confirm it before deployment.
+
+- Priority: P0
+- Effort: M
+- Dependencies: profile presets, image-reference validation, device-side pull preflight, cached operator preferences
+
+Acceptance criteria:
+
+- AC-10.1: GIVEN I create a new profile WHEN I choose Docker Registry, Zot, Harbor, or GHCR THEN THOR pre-fills sensible defaults such as scheme, common port, and suggested display name.
+- AC-10.2: GIVEN prior registry usage or connected devices exist WHEN I create or edit a profile THEN THOR suggests the last used device set and the most likely namespace or host values where appropriate.
+- AC-10.3: GIVEN a saved registry profile WHEN I click “Test Pull” on a selected Jetson or on the Mac THEN THOR performs a pull smoke test with a visible result and actionable failure reason.
+
+### US-11 — Friendly Error Translation & Recovery Actions
+
+As a THOR operator, I want failures translated into plain language with one-click recovery actions so that I can fix problems quickly instead of deciphering TLS, auth, or Docker errors.
+
+- Priority: P0
+- Effort: M
+- Dependencies: normalized validation stages, error mapping layer, UI action routing for trust/auth/retry workflows
+
+Acceptance criteria:
+
+- AC-11.1: GIVEN a validation, apply, or pull failure WHEN THOR surfaces the error THEN it maps raw runtime output into a user-facing explanation such as “Mac trusted, Jetson not trusted” or “registry reachable, password rejected.”
+- AC-11.2: GIVEN a recoverable failure WHEN THOR shows the result THEN the result includes a direct next action such as “Trust on This Mac,” “Apply to Jetsons,” “Update Password,” or “Retry Validation.”
+- AC-11.3: GIVEN detailed logs are still needed WHEN an advanced operator asks for them THEN THOR provides the raw diagnostic output without making it the default presentation.
+
+### US-12 — Demo Preflight Board & 60-Second Showcase Path
+
+As a demo operator, I want a single preflight board and sample path so that I can prove the system is green before a live demo and get from cold start to deploy in under a minute.
+
+- Priority: P0
+- Effort: M
+- Dependencies: staged validation model, device readiness checks, sample/test artifact support, history logging
+
+Acceptance criteria:
+
+- AC-12.1: GIVEN a configured registry and selected Jetsons WHEN I open the preflight board THEN THOR shows green/yellow/red status for Mac trust, registry reachability, credentials, device trust, and pull readiness.
+- AC-12.2: GIVEN all required stages pass WHEN I start the showcase path THEN THOR can drive the operator from profile ready state to test pull or deploy without opening separate unrelated screens.
+- AC-12.3: GIVEN a THOR build intended for showcase rehearsal WHEN the operator needs a known-good path THEN THOR supports a sample/test image workflow or equivalent canned verification path.
+
 ## 3. Scope & Non-Goals
 
 ### In scope for v1
 
 - Global OCI registry profiles in THOR
+- Guided registry setup wizard
 - Importing and trusting a registry CA certificate on macOS
 - Secure storage of registry credentials in macOS Keychain
 - Applying trust/auth to selected Jetson devices
+- Batch “Apply to Jetsons” flow with per-device status
 - Registry validation and readiness checks for Mac + device
+- Preflight board summarizing Mac + device readiness in one view
 - Docker and ANIMA deploy preflight integration
+- Test pull action from the registry workspace
 - Explicit image pull flow from THOR using a chosen registry/image reference
 - Registry browser for repositories/tags/digests where the registry supports it
+- Registry templates and smart defaults for common registry types
+- Friendly error translation with direct recovery actions
 - Clear error states for TLS, auth, reachability, expiry, and drift
 
 ### Explicitly out of scope
@@ -235,6 +298,7 @@ Acceptance criteria:
 - OCI artifact browsing beyond container images
 - Signature and provenance workflows
 - Team sharing/export of registry profiles
+- Fleet-wide policy automation and scheduled drift audits
 
 ### Scope decision log
 
@@ -244,6 +308,8 @@ Acceptance criteria:
 | Mac certificate trust management | IN | Direct user request; core demo value | No |
 | Jetson trust distribution | IN | Required for actual secure device deploys | No |
 | Registry browsing | IN | Important demo and operator usability surface | At beta |
+| Guided setup wizard | IN | Highest leverage UX improvement for Shenzhen | No |
+| Test pull + preflight board | IN | Reduces demo risk and operator uncertainty | No |
 | Image build/push pipeline | OUT | High scope, not required for secure pull/deploy | v2 |
 | SSO/OIDC registry auth | OUT | Too much auth complexity for Shenzhen timeline | Post-demo |
 | Registry hosting inside THOR | OUT | Not aligned with THOR’s device-manager role | No |
@@ -303,6 +369,7 @@ THOR will need persistent models for:
 |---|---|---:|---:|---|
 | Successful end-to-end secure registry onboarding inside THOR | Primary | 0% of flows supported in-app today | 90% of internal dogfood attempts succeed without terminal usage | Internal dogfood checklist + local validation event log |
 | Time from new cert import to first successful secure pull on a Jetson | Secondary | 15-20 min manual workflow estimate | < 5 min median in dogfood sessions | Timed QA script + job timestamps |
+| Time from opening the Registry workspace to first green preflight board | Secondary | Not measurable today | < 90 seconds for known template-based setups | Rehearsal stopwatch + event timestamps |
 | Number of terminal commands required for secure registry setup | Secondary | 8+ manual commands | 0 required for supported v1 flows | Demo runbook audit |
 | Deploy failures caused by missing trust/auth discovered after deploy starts | Guardrail | Common/manual today | 0 in validated THOR flows | Preflight logs + failure categorization |
 | Existing public image workflows that regress after feature launch | Guardrail | 0 regressions today | 0 regressions allowed | Regression test plan + simulator smoke tests |
@@ -319,6 +386,8 @@ THOR will need persistent models for:
 ### Proposed product surface
 
 - A new global **Registry** workspace in THOR for profiles, certs, trust, auth, and browsing
+- A primary **Setup Wizard** entry point for first-run and recovery flows
+- A **Preflight Board** that compresses readiness into one demo-safe view
 - Lightweight registry-aware actions in **Docker**, **Deploy**, and **ANIMA** surfaces
 - Device-level readiness visibility within each registry profile
 - Optional quick access from **Settings** for default registry behavior
@@ -326,6 +395,8 @@ THOR will need persistent models for:
 ### Core flow
 
 `Open Registry workspace`
+→ `Start Setup Wizard`
+→ `Choose template or generic registry`
 → `Create registry profile`
 → `Import CA certificate`
 → `Review cert identity`
@@ -333,8 +404,9 @@ THOR will need persistent models for:
 → `Add auth (optional)`
 → `Select one or more Jetsons`
 → `Apply trust/auth to devices`
-→ `Run validation`
+→ `Run preflight board`
 → `Browse repo/tag or enter image reference`
+→ `Test pull`
 → `Pull image or start deploy`
 → `See ready / failed state`
 
@@ -361,6 +433,20 @@ THOR will need persistent models for:
 - Validation panel: latest pass/fail results
 - Repository browser: repositories, tags, digests when available
 
+#### Setup Wizard
+
+- Template selection for Docker Registry, Zot, Harbor, GHCR, and generic OCI
+- Smart defaults for scheme, port, and display naming
+- Step-by-step flow with progress persistence
+- Final completion state that routes to test pull or deploy
+
+#### Preflight Board
+
+- Staged readiness rows for Mac trust, registry reachability, credentials, device trust, and pull test
+- Green/yellow/red summary suitable for rehearsals and demos
+- Inline recovery actions for each failed stage
+- Ability to rerun preflight without reopening the profile editor
+
 #### Pull/Deploy Integration
 
 - Registry-aware image selector or explicit image reference entry
@@ -377,6 +463,9 @@ THOR will need persistent models for:
 - Certificate expired
 - Certificate fingerprint changed
 - Pull test timed out
+- Mac trusted but Jetson not trusted
+- Jetson trusted but credentials not applied
+- Registry ready, but selected image reference missing or unauthorized
 
 ## 7. Release & Rollout Plan
 
@@ -410,7 +499,7 @@ Use a phased rollout with feature gating inside THOR. Ship the vertical slice re
 |---|---|---|---|
 | PRD sign-off | Internal | Scope accepted, no P0 ambiguity | 2026-04-06 |
 | Alpha vertical slice | Internal | Mac trust + one-device validation works | 2026-04-12 |
-| Beta dogfood | Internal demo team | Multi-device trust/auth + pull preflight works | 2026-04-16 |
+| Beta dogfood | Internal demo team | Wizard + multi-device trust/auth + pull preflight works | 2026-04-16 |
 | Showcase hardening | Internal | Docker Registry + Zot both pass demo runbook | 2026-04-20 |
 | Demo freeze | Internal | No P0/P1 issues open for demo path | 2026-04-22 |
 | Shenzhen showcase | External/demo | Feature rehearsed and frozen | 2026-04-23 |
@@ -428,10 +517,9 @@ Use a phased rollout with feature gating inside THOR. Ship the vertical slice re
 |---|---|
 | Mode selected | CREATE |
 | Product | THOR |
-| User stories | 8 total |
-| P0 stories | 6 |
+| User stories | 12 total |
+| P0 stories | 10 |
 | P1 stories | 2 |
-| Acceptance criteria | 24 |
+| Acceptance criteria | 36 |
 | Dependencies mapped | 6 |
 | High-risk dependencies | 1 |
-

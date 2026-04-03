@@ -189,4 +189,52 @@ struct JetsonControlTests {
         // Docker available in sim but may have 0 images
         #expect(response.images is [DockerImage])
     }
+
+    // MARK: - Registry Device Integration
+
+    @Test("Apply registry trust and auth on sim")
+    func applyRegistryOnSim() async throws {
+        let client = AgentClient(port: 8470)
+        let response = try await client.applyRegistry(
+            registryAddress: "registry.demo.local:5443",
+            caCertificatePEM: """
+            -----BEGIN CERTIFICATE-----
+            ZGVtby10aG9yLXJlZ2lzdHJ5LWNlcnQ=
+            -----END CERTIFICATE-----
+            """,
+            caCertificateBase64: nil,
+            username: "demo",
+            password: "secret"
+        )
+
+        #expect(response.registry == "registry.demo.local:5443")
+        #expect(response.trusted)
+        #expect(response.authenticated)
+        #expect(response.ready)
+    }
+
+    @Test("Registry device preflight passes after apply on sim")
+    func registryPreflightOnSim() async throws {
+        let client = AgentClient(port: 8470)
+        _ = try await client.applyRegistry(
+            registryAddress: "registry.demo.local:5443",
+            caCertificatePEM: """
+            -----BEGIN CERTIFICATE-----
+            ZGVtby10aG9yLXJlZ2lzdHJ5LWNlcnQ=
+            -----END CERTIFICATE-----
+            """,
+            caCertificateBase64: nil,
+            username: "demo",
+            password: "secret"
+        )
+
+        let validation = try await client.validateDeviceRegistry(
+            registryAddress: "registry.demo.local:5443",
+            image: "registry.demo.local:5443/demo/app:latest"
+        )
+
+        #expect(validation.status == .pass)
+        #expect(validation.ready)
+        #expect(validation.stages.contains { $0.name == "Device Pull Preflight" && $0.status == .pass })
+    }
 }
