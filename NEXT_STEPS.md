@@ -58,6 +58,9 @@
   - `thorctl registry-device-status`, `registry-device-apply`, and `registry-device-preflight`
   - upgraded registry workspace with setup checklist, Jetson rollout, and preflight visibility
   - additional integration tests for device-side registry apply + preflight
+- Created a separate robotics-facing product PRD:
+  - `docs/PRD-Robot-Sensor-Cockpit.md`
+  - defines THOR’s next differentiation track around live sensor streaming, ROS2 bring-up, and robot readiness
 - Verified the implementation against Docker sims:
   - `make docker-up`
   - `thorctl health 8470`
@@ -90,3 +93,12 @@
 - Need confirmation on acceptable service disruption when applying trust to a live device runtime.
 
 ## Shenzhen Feature Readiness: 65%
+
+## Post-Shenzhen Product Track — Robotics Developer Cockpit
+- [x] Separate PRD for robotics-facing differentiation
+- [ ] Review and approve Sensor Cockpit v1 scope
+- [ ] Add live camera preview workspace
+- [ ] Add ROS2 LaserScan visualization
+- [ ] Add stream health overlays and bounded bag capture
+- [ ] Expand ROS2 UI beyond list-only inspection
+- [ ] Add robot readiness board tying sensors, ROS2, deploy, and runtime together
