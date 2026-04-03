@@ -7,6 +7,7 @@ import THORShared
 @MainActor
 final class AppState {
     var devices: [Device] = []
+    var registryProfiles: [RegistryProfile] = []
     var selectedDeviceID: Int64?
     var connectionStates: [Int64: ConnectionState] = [:]
     var isLoading = false
@@ -15,6 +16,8 @@ final class AppState {
     private(set) var db: DatabaseManager?
     let keychain = KeychainManager()
     let sshManager = SSHSessionManager()
+    let registryCertificateService = RegistryCertificateService()
+    let registryValidationService = RegistryValidationService()
     private(set) var connector: DeviceConnector?
     private(set) var pipelineDeployer: PipelineDeployer?
     private var healthPollingTask: Task<Void, Never>?
@@ -50,6 +53,12 @@ final class AppState {
         connectionStates = Dictionary(
             uniqueKeysWithValues: states.map { ($0.deviceID, $0) }
         )
+
+        registryProfiles = try await db.reader.read { db in
+            try RegistryProfile
+                .order(RegistryProfile.Columns.displayName.asc)
+                .fetchAll(db)
+        }
     }
 
     func addDevice(_ device: Device) async throws {
@@ -62,6 +71,73 @@ final class AppState {
         if let savedDevice {
             devices.append(savedDevice)
         }
+    }
+
+    // MARK: - Registry Profiles
+
+    func saveRegistryProfile(_ profile: RegistryProfile, password: String?) async throws -> RegistryProfile {
+        guard let db else { return profile }
+
+        var draft = profile
+        draft.updatedAt = Date()
+        if draft.id == nil {
+            draft.createdAt = Date()
+        }
+
+        let saved = try await db.writer.write { [draft] dbConn -> RegistryProfile in
+            var record = draft
+            if let id = record.id, try RegistryProfile.fetchOne(dbConn, id: id) != nil {
+                try record.update(dbConn)
+                guard let updated = try RegistryProfile.fetchOne(dbConn, id: id) else {
+                    return record
+                }
+                return updated
+            } else {
+                try record.insert(dbConn)
+                guard let inserted = try RegistryProfile.fetchOne(dbConn, id: dbConn.lastInsertedRowID) else {
+                    return record
+                }
+                return inserted
+            }
+        }
+
+        if let profileID = saved.id, let password, !password.isEmpty {
+            try keychain.storeRegistryPassword(password, for: profileID)
+        }
+
+        try await loadDevices()
+        return saved
+    }
+
+    func removeRegistryProfile(_ profile: RegistryProfile) async throws {
+        guard let db, let id = profile.id else { return }
+        try await db.writer.write { dbConn in
+            _ = try RegistryProfile.deleteOne(dbConn, id: id)
+        }
+        keychain.removeRegistrySecrets(for: id)
+        registryCertificateService.removeManagedCertificate(at: profile.caCertificatePath)
+        try await loadDevices()
+    }
+
+    func validateRegistryProfile(_ profile: RegistryProfile) async throws -> RegistryValidationReport {
+        let password = profile.id.flatMap { keychain.registryPassword(for: $0) }
+        let report = await registryValidationService.validate(profile: profile, password: password)
+
+        guard let db, let id = profile.id else { return report }
+        try await db.writer.write { [report, id] dbConn in
+            guard var record = try RegistryProfile.fetchOne(dbConn, id: id) else { return }
+            record.lastValidatedAt = Date()
+            record.lastValidationStatus = report.status
+            record.lastValidationMessage = report.summary
+            record.updatedAt = Date()
+            try record.update(dbConn)
+        }
+        try await loadDevices()
+        return report
+    }
+
+    func clearRegistryPassword(for profileID: Int64) {
+        keychain.removeRegistrySecrets(for: profileID)
     }
 
     func removeDevice(_ device: Device) async throws {

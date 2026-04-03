@@ -12,10 +12,15 @@ func run() async {
     switch command {
     case "devices", "ls":
         await listDevices()
+    case "registries":
+        await listRegistries()
     case "connect":
         let host = args.count > 2 ? args[2] : "localhost"
         let port = args.count > 3 ? Int(args[3]) ?? 8470 : 8470
         await connectDevice(host: host, port: port)
+    case "registry-validate":
+        let identifier = args.count > 2 ? args[2] : ""
+        await validateRegistry(identifier: identifier)
     case "health":
         let port = args.count > 2 ? Int(args[2]) ?? 8470 : 8470
         await checkHealth(port: port)
@@ -115,6 +120,34 @@ func listDevices() async {
                          String(device.hostname.prefix(25)),
                          String((device.lastKnownIP ?? "—").prefix(15)),
                          device.environment.rawValue))
+        }
+    } catch {
+        print("Error: \(error.localizedDescription)")
+    }
+}
+
+func listRegistries() async {
+    do {
+        let db = try DatabaseManager(path: DatabaseManager.defaultPath)
+        let profiles = try await db.reader.read { dbConn in
+            try RegistryProfile
+                .order(RegistryProfile.Columns.displayName.asc)
+                .fetchAll(dbConn)
+        }
+
+        if profiles.isEmpty {
+            print("No registry profiles saved. Add one via the THOR app.")
+            return
+        }
+
+        print(String(format: "%-4s %-24s %-32s %-8s", "ID", "NAME", "ENDPOINT", "STATUS"))
+        print(String(repeating: "-", count: 78))
+        for profile in profiles {
+            print(String(format: "%-4d %-24s %-32s %-8s",
+                         profile.id ?? 0,
+                         String(profile.displayName.prefix(24)),
+                         String(profile.endpointLabel.prefix(32)),
+                         profile.lastValidationStatus.rawValue))
         }
     } catch {
         print("Error: \(error.localizedDescription)")
@@ -336,6 +369,57 @@ func ros2Topics(port: Int) async {
     }
 }
 
+func validateRegistry(identifier: String) async {
+    guard !identifier.isEmpty else {
+        print("Usage: thorctl registry-validate <id|name|host>")
+        return
+    }
+
+    do {
+        let db = try DatabaseManager(path: DatabaseManager.defaultPath)
+        let profiles = try await db.reader.read { dbConn in
+            try RegistryProfile.fetchAll(dbConn)
+        }
+
+        guard let profile = profiles.first(where: { profile in
+            if let id = profile.id, String(id) == identifier {
+                return true
+            }
+            return profile.displayName.caseInsensitiveCompare(identifier) == .orderedSame
+                || profile.host.caseInsensitiveCompare(identifier) == .orderedSame
+                || profile.endpointLabel.caseInsensitiveCompare(identifier) == .orderedSame
+        }) else {
+            print("Registry profile not found: \(identifier)")
+            return
+        }
+
+        let keychain = KeychainManager()
+        let password = profile.id.flatMap { keychain.registryPassword(for: $0) }
+        let validator = RegistryValidationService()
+        let report = await validator.validate(profile: profile, password: password)
+
+        if let profileID = profile.id {
+            try await db.writer.write { [report, profileID] dbConn in
+                guard var record = try RegistryProfile.fetchOne(dbConn, id: profileID) else { return }
+                record.lastValidatedAt = Date()
+                record.lastValidationStatus = report.status
+                record.lastValidationMessage = report.summary
+                record.updatedAt = Date()
+                try record.update(dbConn)
+            }
+        }
+
+        print("Registry: \(report.endpoint)")
+        print("Status:   \(report.status.rawValue)")
+        print(String(repeating: "-", count: 60))
+        for stage in report.stages {
+            print("[\(stage.status.rawValue.uppercased())] \(stage.name): \(stage.message)")
+        }
+    } catch {
+        print("Error: \(error.localizedDescription)")
+    }
+}
+
 // MARK: - New Jetson Control Commands
 
 func powerInfo(port: Int) async {
@@ -504,7 +588,9 @@ func printUsage() {
 
     DEVICE COMMANDS:
       devices, ls                   List registered devices
+      registries                    List saved OCI registry profiles
       connect <host> [port]         Connect and show device info
+      registry-validate <id|name|host>  Validate a saved OCI registry profile
       health [port]                 Check agent health
       capabilities, caps [port]     Show device capabilities
       metrics [port]                Show system metrics

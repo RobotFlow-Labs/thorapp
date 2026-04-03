@@ -63,6 +63,25 @@ public struct KeychainManager: Sendable {
         }
     }
 
+    // MARK: - Registry Credentials
+
+    /// Store a registry password for a profile.
+    public func storeRegistryPassword(_ password: String, for profileID: Int64) throws {
+        let key = "\(servicePrefix).registry.password.\(profileID)"
+        try store(value: password, for: key)
+    }
+
+    /// Retrieve a registry password for a profile.
+    public func registryPassword(for profileID: Int64) -> String? {
+        let key = "\(servicePrefix).registry.password.\(profileID)"
+        return retrieve(for: key)
+    }
+
+    /// Remove registry secrets for a profile.
+    public func removeRegistrySecrets(for profileID: Int64) {
+        delete(for: "\(servicePrefix).registry.password.\(profileID)")
+    }
+
     // MARK: - Private
 
     private func store(value: String, for account: String) throws {

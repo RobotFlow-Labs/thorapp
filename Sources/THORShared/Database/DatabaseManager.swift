@@ -220,6 +220,29 @@ public final class DatabaseManager: Sendable {
             }
         }
 
+        migrator.registerMigration("v4_registry_profiles") { db in
+            try db.create(table: "registry_profiles") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("displayName", .text).notNull()
+                t.column("host", .text).notNull()
+                t.column("port", .integer).notNull().defaults(to: 443)
+                t.column("scheme", .text).notNull().defaults(to: "https")
+                t.column("username", .text)
+                t.column("repositoryNamespace", .text).notNull().defaults(to: "")
+                t.column("caCertificatePath", .text)
+                t.column("caCertificateFingerprintSHA256", .text)
+                t.column("caCertificateFingerprintSHA1", .text)
+                t.column("caCertificateCommonName", .text)
+                t.column("caCertificateIssuer", .text)
+                t.column("caCertificateExpiresAt", .datetime)
+                t.column("lastValidatedAt", .datetime)
+                t.column("lastValidationStatus", .text).notNull().defaults(to: "unknown")
+                t.column("lastValidationMessage", .text)
+                t.column("createdAt", .datetime).notNull()
+                t.column("updatedAt", .datetime).notNull()
+            }
+        }
+
         return migrator
     }
 
