@@ -623,10 +623,7 @@ extension AppState {
     }
 
     private func diagnosticsDirectory() -> URL {
-        let root = URL(fileURLWithPath: DatabaseManager.defaultPath)
-            .deletingLastPathComponent()
-            .appendingPathComponent("Diagnostics", isDirectory: true)
-        return root
+        DatabaseManager.supportDirectoryURL.appendingPathComponent("Diagnostics", isDirectory: true)
     }
 
     private func diagnosticsSummary(device: Device, report: ReadinessReport, archiveURL: URL) -> String {

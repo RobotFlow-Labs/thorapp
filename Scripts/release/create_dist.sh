@@ -40,7 +40,7 @@ create_binary() {
   local binaries=()
 
   for arch in "${ARCH_LIST[@]}"; do
-    swift build -c "$CONF" --arch "$arch" --product "$name"
+    Scripts/dev/swiftw build -c "$CONF" --arch "$arch" --product "$name"
     local source_path
     source_path=$(build_product_path "$name" "$arch")
     if [[ ! -f "$source_path" ]]; then

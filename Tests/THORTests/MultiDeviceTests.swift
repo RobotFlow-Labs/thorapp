@@ -85,8 +85,8 @@ struct MultiDeviceTests {
         let db = try DatabaseManager(path: tempDir.appendingPathComponent("test.sqlite").path)
 
         // Insert two devices
-        var thor = Device(displayName: "Thor-01", hostname: "192.168.1.100", environment: .lab, tags: "primary")
-        var orin = Device(displayName: "Orin-01", hostname: "192.168.1.101", environment: .field, tags: "secondary")
+        let thor = Device(displayName: "Thor-01", hostname: "192.168.1.100", environment: .lab, tags: "primary")
+        let orin = Device(displayName: "Orin-01", hostname: "192.168.1.101", environment: .field, tags: "secondary")
 
         try db.writer.write { dbConn in
             try thor.insert(dbConn)
@@ -104,12 +104,12 @@ struct MultiDeviceTests {
         let thorID = devices.first { $0.displayName == "Thor-01" }!.id!
         let orinID = devices.first { $0.displayName == "Orin-01" }!.id!
 
-        var thorSnap = CompatibilitySnapshot(
+        let thorSnap = CompatibilitySnapshot(
             deviceID: thorID, jetsonModel: "Jetson Thor",
             osRelease: "Ubuntu 22.04", agentVersion: "0.1.0",
             supportStatus: .supported
         )
-        var orinSnap = CompatibilitySnapshot(
+        let orinSnap = CompatibilitySnapshot(
             deviceID: orinID, jetsonModel: "Jetson Orin NX",
             osRelease: "Ubuntu 22.04", jetpackVersion: "6.0",
             agentVersion: "0.1.0", supportStatus: .supported

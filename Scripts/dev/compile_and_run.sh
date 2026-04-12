@@ -34,7 +34,7 @@ pkill -x "${APP_NAME}" 2>/dev/null || true
 
 if [[ "${RUN_TESTS}" == "1" ]]; then
   log "==> swift test"
-  swift test -q
+  Scripts/dev/swiftw test -q
 fi
 
 HOST_ARCH="$(uname -m)"

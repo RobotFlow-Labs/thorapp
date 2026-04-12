@@ -11,6 +11,7 @@ import SQLite3
 /// Used by both THORApp and THORCore via the app group container.
 public final class DatabaseManager: Sendable {
     private let dbPool: DatabasePool
+    public static let supportDirectoryEnvironmentKey = "THOR_APP_SUPPORT_DIR"
 
     public var reader: DatabaseReader { dbPool }
     public var writer: DatabaseWriter { dbPool }
@@ -297,18 +298,36 @@ public final class DatabaseManager: Sendable {
 
     // MARK: - Convenience
 
-    /// Default database path inside the app support directory.
+    /// Default THOR app support directory, with an explicit override for tests
+    /// and a temporary fallback when Application Support is unavailable.
+    public static var supportDirectoryURL: URL {
+        let fileManager = FileManager.default
+
+        if let override = ProcessInfo.processInfo.environment[supportDirectoryEnvironmentKey]?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+           !override.isEmpty {
+            let url = URL(fileURLWithPath: override, isDirectory: true)
+            try? fileManager.createDirectory(at: url, withIntermediateDirectories: true)
+            return url
+        }
+
+        if let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
+            let thorDirectory = appSupport.appendingPathComponent("THOR", isDirectory: true)
+            do {
+                try fileManager.createDirectory(at: thorDirectory, withIntermediateDirectories: true)
+                return thorDirectory
+            } catch {
+                // Fall through to a writable emergency location below.
+            }
+        }
+
+        let fallback = fileManager.temporaryDirectory.appendingPathComponent("THOR", isDirectory: true)
+        try? fileManager.createDirectory(at: fallback, withIntermediateDirectories: true)
+        return fallback
+    }
+
+    /// Default database path inside the THOR support directory.
     public static var defaultPath: String {
-        let appSupport = FileManager.default.urls(
-            for: .applicationSupportDirectory,
-            in: .userDomainMask
-        ).first!.appendingPathComponent("THOR")
-
-        try? FileManager.default.createDirectory(
-            at: appSupport,
-            withIntermediateDirectories: true
-        )
-
-        return appSupport.appendingPathComponent("thor.sqlite").path
+        supportDirectoryURL.appendingPathComponent("thor.sqlite").path
     }
 }

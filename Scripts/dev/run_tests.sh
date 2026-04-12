@@ -23,7 +23,7 @@ wait_for_health() {
 
 case "$MODE" in
   unit)
-    exec swift test --filter "DatabaseTests|PipelineComposerTests|RegistryFeatureTests|JetsonThorQuickStartSupportTests|JetsonThorProductionReadinessTests|CLISmokeTests"
+    exec Scripts/dev/swiftw test --filter "DatabaseTests|PipelineComposerTests|RegistryFeatureTests|JetsonThorQuickStartSupportTests|JetsonThorProductionReadinessTests|CLISmokeTests"
     ;;
   all)
     ;;
@@ -61,4 +61,4 @@ wait_for_health "http://127.0.0.1:8470/v1/health" "Thor simulator"
 wait_for_health "http://127.0.0.1:8471/v1/health" "Orin simulator"
 
 echo "==> Running swift test"
-swift test
+Scripts/dev/swiftw test

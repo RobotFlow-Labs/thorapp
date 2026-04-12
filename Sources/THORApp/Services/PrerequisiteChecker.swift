@@ -1,4 +1,5 @@
 import Foundation
+import THORShared
 
 /// Checks system prerequisites for THOR to function.
 @MainActor
@@ -76,17 +77,25 @@ final class PrerequisiteChecker {
     }
 
     private func checkDatabasePath() -> CheckResult {
-        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-        if let dir = appSupport {
-            let thorDir = dir.appendingPathComponent("THOR")
-            do {
-                try FileManager.default.createDirectory(at: thorDir, withIntermediateDirectories: true)
-                return CheckResult(name: "Database", status: .pass, detail: "Writable at \(thorDir.path)")
-            } catch {
-                return CheckResult(name: "Database", status: .fail, detail: "Cannot write to \(thorDir.path): \(error.localizedDescription)")
+        let thorDir = DatabaseManager.supportDirectoryURL
+        let override = ProcessInfo.processInfo.environment[DatabaseManager.supportDirectoryEnvironmentKey]?.trimmingCharacters(
+            in: .whitespacesAndNewlines
+        )
+        let isTemporaryFallback = override == nil && thorDir.path.hasPrefix(FileManager.default.temporaryDirectory.path)
+
+        do {
+            try FileManager.default.createDirectory(at: thorDir, withIntermediateDirectories: true)
+            if isTemporaryFallback {
+                return CheckResult(
+                    name: "Database",
+                    status: .warning,
+                    detail: "Application Support is unavailable; THOR is using temporary storage at \(thorDir.path)"
+                )
             }
+            return CheckResult(name: "Database", status: .pass, detail: "Writable at \(thorDir.path)")
+        } catch {
+            return CheckResult(name: "Database", status: .fail, detail: "Cannot write to \(thorDir.path): \(error.localizedDescription)")
         }
-        return CheckResult(name: "Database", status: .fail, detail: "Application Support directory not found")
     }
 
     private func checkKeychain() -> CheckResult {

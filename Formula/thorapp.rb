@@ -11,7 +11,7 @@ class Thorapp < Formula
   depends_on macos: :sonoma
 
   def install
-    system "swift", "build",
+    system "bash", "Scripts/dev/swiftw", "build",
            "-c", "release",
            "--disable-sandbox",
            "--arch", "arm64"

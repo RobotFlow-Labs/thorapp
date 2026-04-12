@@ -60,13 +60,17 @@ public enum RegistryCertificateError: Error, LocalizedError {
 }
 
 public struct RegistryCertificateService: Sendable {
-    public init() {}
+    private let certificatesDirectoryURL: URL
+
+    public init(certificatesDirectory: URL? = nil) {
+        self.certificatesDirectoryURL = certificatesDirectory ?? Self.certificatesDirectory
+    }
 
     public func importCertificate(from sourceURL: URL, preferredName: String) throws -> ManagedRegistryCertificate {
         let info = try parseCertificate(at: sourceURL)
         let ext = sourceURL.pathExtension.isEmpty ? "crt" : sourceURL.pathExtension
-        let managedURL = Self.certificatesDirectory.appendingPathComponent("\(sanitize(preferredName)).\(ext)")
-        try FileManager.default.createDirectory(at: Self.certificatesDirectory, withIntermediateDirectories: true)
+        let managedURL = certificatesDirectoryURL.appendingPathComponent("\(sanitize(preferredName)).\(ext)")
+        try FileManager.default.createDirectory(at: certificatesDirectoryURL, withIntermediateDirectories: true)
         if FileManager.default.fileExists(atPath: managedURL.path) {
             try FileManager.default.removeItem(at: managedURL)
         }
@@ -151,12 +155,13 @@ public struct RegistryCertificateService: Sendable {
 
     public func removeManagedCertificate(at path: String?) {
         guard let path else { return }
-        try? FileManager.default.removeItem(atPath: path)
+        let candidateURL = URL(fileURLWithPath: path)
+        guard isManagedCertificateURL(candidateURL) else { return }
+        try? FileManager.default.removeItem(at: candidateURL)
     }
 
     public static var certificatesDirectory: URL {
-        let base = URL(fileURLWithPath: DatabaseManager.defaultPath).deletingLastPathComponent()
-        return base.appendingPathComponent("RegistryCertificates", isDirectory: true)
+        DatabaseManager.supportDirectoryURL.appendingPathComponent("RegistryCertificates", isDirectory: true)
     }
 
     public static var loginKeychainPath: String {
@@ -190,6 +195,12 @@ public struct RegistryCertificateService: Sendable {
 
     private func sanitize(_ value: String) -> String {
         value.lowercased().replacingOccurrences(of: #"[^a-z0-9\-._]+"#, with: "-", options: .regularExpression)
+    }
+
+    private func isManagedCertificateURL(_ url: URL) -> Bool {
+        let managedRoot = certificatesDirectoryURL.standardizedFileURL.resolvingSymlinksInPath()
+        let candidate = url.standardizedFileURL.resolvingSymlinksInPath()
+        return candidate.path == managedRoot.path || candidate.path.hasPrefix(managedRoot.path + "/")
     }
 
     private func parseOpenSSLDisplayLine(_ line: String, prefix: String) -> String {

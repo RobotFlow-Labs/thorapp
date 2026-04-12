@@ -124,7 +124,7 @@ struct PipelineComposerTests {
         let db = try DatabaseManager(path: tempDir.appendingPathComponent("test.sqlite").path)
 
         // Need a device first
-        var device = Device(displayName: "Test", hostname: "test.local")
+        let device = Device(displayName: "Test", hostname: "test.local")
         try db.writer.write { dbConn in
             try device.insert(dbConn)
         }
@@ -133,7 +133,7 @@ struct PipelineComposerTests {
         }
 
         // Insert pipeline
-        var pipeline = Pipeline(
+        let pipeline = Pipeline(
             name: "test-pipeline",
             description: "A test",
             modules: [sampleModule()],

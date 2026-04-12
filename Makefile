@@ -1,5 +1,7 @@
 .PHONY: build release test test-unit run package dist tap-smoke install-cli clean docker-up docker-down docker-logs lint icon help
 
+SIGNING_MODE ?= adhoc
+
 # Default target
 help:
 	@echo "THOR — Mac-to-Jetson Robotics Control Plane"
@@ -33,10 +35,10 @@ help:
 
 # Build
 build:
-	swift build
+	Scripts/dev/swiftw build
 
 release:
-	swift build -c release
+	Scripts/dev/swiftw build -c release
 
 # Test
 test:
@@ -51,10 +53,10 @@ run: package
 	@open THORApp.app
 
 package:
-	SIGNING_MODE=adhoc Scripts/package_app.sh release
+	SIGNING_MODE=$(SIGNING_MODE) Scripts/package_app.sh release
 
 dist:
-	SIGNING_MODE=adhoc Scripts/release/create_dist.sh release
+	SIGNING_MODE=$(SIGNING_MODE) Scripts/release/create_dist.sh release
 
 tap-smoke:
 	Scripts/release/tap_smoke.sh
@@ -79,7 +81,7 @@ install-cli: release
 	@echo "Done. Run 'thorctl help' to get started."
 
 thorctl:
-	swift run thorctl $(ARGS)
+	Scripts/dev/swiftw run thorctl $(ARGS)
 
 # Quality
 lint:
@@ -90,7 +92,7 @@ stats:
 	@echo "Files:    $$(find . -type f -not -path './.build/*' -not -path './THORApp.app/*' -not -path './.git/*' -not -name '.DS_Store' -not -name 'Package.resolved' | wc -l | tr -d ' ')"
 	@echo "Lines:    $$(find . -type f -not -path './.build/*' -not -path './THORApp.app/*' -not -path './.git/*' -not -name '.DS_Store' -not -name 'Package.resolved' | xargs wc -l 2>/dev/null | tail -1 | awk '{print $$1}')"
 	@echo "Commits:  $$(git log --oneline | wc -l | tr -d ' ')"
-	@echo "Tests:    $$(swift test 2>&1 | grep 'Test run' | grep -oE '[0-9]+ tests' | head -1)"
+	@echo "Tests:    $$(Scripts/dev/swiftw test 2>&1 | grep 'Test run' | grep -oE '[0-9]+ tests' | head -1)"
 	@echo "TODOs:    $$(rg TODO Sources/ 2>/dev/null | wc -l | tr -d ' ')"
 
 # Clean

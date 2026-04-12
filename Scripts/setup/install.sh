@@ -58,7 +58,7 @@ cd "$ROOT_DIR"
 # Build
 echo ""
 echo "Building THOR..."
-swift build -c release
+Scripts/dev/swiftw build -c release
 
 BIN_DIR="$(resolve_install_dir "${INSTALL_BIN_DIR:-}" "/usr/local/bin" "$HOME/.local/bin")"
 APP_DIR="$(resolve_install_dir "${INSTALL_APP_DIR:-}" "/Applications" "$HOME/Applications")"

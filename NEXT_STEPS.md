@@ -2,7 +2,7 @@
 
 ## Last Updated: 2026-04-12
 
-## Status: repo-side v0.1.0 release hardening is in place; remaining blockers are external sign-off items (physical AGX Thor bring-up rehearsal, Docker-backed integration rerun when Docker is available, and a real Developer ID/notarized tag release)
+## Status: repo-side v0.1.0 release hardening is in place, including sandbox-safe app storage fallbacks and clean no-Docker release packaging; remaining blockers are external sign-off items (physical AGX Thor bring-up rehearsal, Docker-backed integration rerun when Docker is available, and a real Developer ID/notarized tag release)
 
 ## Stats
 - 100+ files, 19,800+ lines
@@ -34,6 +34,25 @@
 - External release sign-off is still pending on hardware, Docker-backed integration rerun, and Apple-notarized distribution
 
 ## This Session — 2026-04-12
+- Added a sixth production-hardening pass focused on app-managed storage and release-path correctness:
+  - Swift build/test/release entrypoints now go through `Scripts/dev/swiftw`, which keeps SwiftPM artifacts in repo-owned writable directories instead of assuming unrestricted user-home cache access
+  - `DatabaseManager` now exposes a THOR support-directory resolver with explicit override support plus a temporary fallback when `Application Support` is unavailable
+  - registry certificate storage no longer derives from the SQLite file path, and registry cleanup is constrained to THOR-managed certificate files instead of deleting arbitrary paths
+  - diagnostics bundles now use the same support-directory root as the rest of the app-managed artifacts
+  - prerequisite checks now report a warning when THOR has to fall back to temporary storage instead of silently assuming durable Application Support access
+  - release verification now reads `Info.plist` with `plutil` instead of `defaults`, fixing false negatives in `make dist`
+  - `Makefile` package/dist targets now respect caller-supplied `SIGNING_MODE`, so Developer ID + notarized CI releases are no longer overridden back to ad-hoc signing
+  - cleaned the remaining selected-suite Swift test warnings in registry/database/pipeline/multi-device/edge-case coverage
+- Revalidated the repo-side application/release path after this pass:
+  - `Scripts/dev/swiftw build`
+  - `Scripts/dev/swiftw test --filter RegistryFeatureTests`
+  - `make test-unit`
+  - `make dist`
+- Remaining follow-up after this pass:
+  - rerun `make test` once Docker Desktop is available on the host
+  - rehearse the guided AGX Thor first-boot flow on physical hardware
+  - run a real Developer ID + notarization tag release with Apple credentials
+  - continue app-quality polish around artifact/export path consistency and deeper storage-root separation if we keep tightening the operator UX
 - Added a real Jetson AGX Thor first-boot/operator path to THOR:
   - shared `JetsonThorQuickStartSupport` for Mac-side serial port, USB tether, and SSH key detection
   - `JetsonThorQuickStartView` embedded in onboarding and setup surfaces

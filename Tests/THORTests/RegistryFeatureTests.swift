@@ -12,7 +12,7 @@ struct RegistryFeatureTests {
         defer { try? FileManager.default.removeItem(at: tempDir) }
 
         let db = try DatabaseManager(path: tempDir.appendingPathComponent("test.sqlite").path)
-        var profile = RegistryProfile(
+        let profile = RegistryProfile(
             displayName: "Thor Demo Registry",
             host: "registry.local",
             port: 5443,
@@ -79,7 +79,8 @@ struct RegistryFeatureTests {
         let errorOutput = String(data: stderr.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
         #expect(process.terminationStatus == 0, "openssl failed: \(errorOutput)")
 
-        let service = RegistryCertificateService()
+        let certificatesDirectory = tempDir.appendingPathComponent("managed-certs", isDirectory: true)
+        let service = RegistryCertificateService(certificatesDirectory: certificatesDirectory)
         let managed = try service.importCertificate(
             from: certURL,
             preferredName: "thor-registry-\(UUID().uuidString)"
@@ -87,6 +88,7 @@ struct RegistryFeatureTests {
         defer { service.removeManagedCertificate(at: managed.url.path) }
 
         #expect(FileManager.default.fileExists(atPath: managed.url.path))
+        #expect(managed.url.path.hasPrefix(certificatesDirectory.path))
         #expect(managed.info.subjectSummary.contains("thor-registry-test"))
         #expect(managed.info.fingerprintSHA256.isEmpty == false)
         #expect(managed.info.fingerprintSHA1.isEmpty == false)
@@ -109,5 +111,28 @@ struct RegistryFeatureTests {
         #expect(credentialsStage != nil)
         #expect(credentialsStage?.status == .warning)
         #expect(report.status.rank >= RegistryValidationStatus.warning.rank)
+    }
+
+    @Test("Managed certificate cleanup only removes files inside THOR storage")
+    func managedCertificateCleanupStaysScoped() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+        let certificatesDirectory = tempDir.appendingPathComponent("managed-certs", isDirectory: true)
+        let externalFile = tempDir.appendingPathComponent("outside.crt")
+
+        try FileManager.default.createDirectory(at: certificatesDirectory, withIntermediateDirectories: true)
+        try Data("external".utf8).write(to: externalFile)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let service = RegistryCertificateService(certificatesDirectory: certificatesDirectory)
+        service.removeManagedCertificate(at: externalFile.path)
+
+        #expect(FileManager.default.fileExists(atPath: externalFile.path))
+
+        let managedFile = certificatesDirectory.appendingPathComponent("inside.crt")
+        try Data("managed".utf8).write(to: managedFile)
+        service.removeManagedCertificate(at: managedFile.path)
+
+        #expect(FileManager.default.fileExists(atPath: managedFile.path) == false)
     }
 }

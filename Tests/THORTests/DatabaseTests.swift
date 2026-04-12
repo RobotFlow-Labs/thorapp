@@ -16,7 +16,7 @@ struct DatabaseTests {
         let db = try DatabaseManager(path: dbPath)
 
         // Verify we can write and read a device
-        var device = Device(
+        let device = Device(
             displayName: "Test Jetson",
             hostname: "192.168.1.100",
             environment: .lab
@@ -47,7 +47,7 @@ struct DatabaseTests {
         let db = try DatabaseManager(path: dbPath)
 
         // Insert
-        var device = Device(
+        let device = Device(
             displayName: "Thor-01",
             hostname: "jetson-thor.local",
             lastKnownIP: "10.0.0.50",
@@ -101,7 +101,7 @@ struct DatabaseTests {
         let db = try DatabaseManager(path: dbPath)
 
         // Create device first
-        var device = Device(displayName: "Test", hostname: "test.local")
+        let device = Device(displayName: "Test", hostname: "test.local")
         try db.writer.write { dbConn in
             try device.insert(dbConn)
         }
@@ -111,7 +111,7 @@ struct DatabaseTests {
         }
 
         // Create job
-        var job = Job(
+        let job = Job(
             deviceID: deviceID,
             jobType: .enroll,
             status: .created
@@ -186,7 +186,7 @@ struct DatabaseTests {
         let dbPath = tempDir.appendingPathComponent("test.sqlite").path
         let db = try DatabaseManager(path: dbPath)
 
-        var device = Device(displayName: "Thor Sim", hostname: "thor.local")
+        let device = Device(displayName: "Thor Sim", hostname: "thor.local")
         try db.writer.write { dbConn in
             try device.insert(dbConn)
         }
@@ -229,22 +229,22 @@ struct DatabaseTests {
         )
 
         let encoder = JSONEncoder()
-        var launchRecord = LaunchProfileRecord(
+        let launchRecord = LaunchProfileRecord(
             deviceID: deviceID,
             name: launchProfile.name,
             configJSON: String(decoding: try encoder.encode(launchProfile), as: UTF8.self)
         )
-        var recipeRecord = DeployRecipeRecord(
+        let recipeRecord = DeployRecipeRecord(
             name: recipe.name,
             recipeJSON: String(decoding: try encoder.encode(recipe), as: UTF8.self)
         )
         var runRecord = RecipeRunRecord(deviceID: deviceID, status: .success, logJSON: "[]", finishedAt: Date())
-        var diagnosticRecord = DiagnosticRunRecord(
+        let diagnosticRecord = DiagnosticRunRecord(
             deviceID: deviceID,
             archivePath: "/tmp/thor-diagnostics.zip",
             manifestJSON: String(decoding: try encoder.encode(manifest), as: UTF8.self)
         )
-        var flowRecord = GuidedFlowProgressRecord(flowID: "first-simulator-session", status: .completed, progress: 1.0)
+        let flowRecord = GuidedFlowProgressRecord(flowID: "first-simulator-session", status: .completed, progress: 1.0)
 
         try db.writer.write { dbConn in
             try launchRecord.insert(dbConn)
@@ -296,7 +296,7 @@ struct DatabaseTests {
         let dbPath = tempDir.appendingPathComponent("test.sqlite").path
         let db = try DatabaseManager(path: dbPath)
 
-        var progress = GuidedFlowProgressRecord(
+        let progress = GuidedFlowProgressRecord(
             flowID: "thor.quickstart",
             status: .inProgress,
             progress: 0.4

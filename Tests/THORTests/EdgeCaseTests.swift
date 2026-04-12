@@ -27,28 +27,28 @@ struct EdgeCaseTests {
         let db = try DatabaseManager(path: tempDir.appendingPathComponent("test.sqlite").path)
 
         // Insert device + identity + snapshot + job + config
-        var device = Device(displayName: "Cascade Test", hostname: "test.local")
+        let device = Device(displayName: "Cascade Test", hostname: "test.local")
         try db.writer.write { dbConn in try device.insert(dbConn) }
 
         let deviceID = try db.reader.read { try Device.fetchOne($0)!.id! }
 
         try db.writer.write { dbConn in
-            var identity = DeviceIdentity(deviceID: deviceID, hostKeyFingerprint: "SHA256:test123")
+            let identity = DeviceIdentity(deviceID: deviceID, hostKeyFingerprint: "SHA256:test123")
             try identity.insert(dbConn)
 
-            var snapshot = CompatibilitySnapshot(
+            let snapshot = CompatibilitySnapshot(
                 deviceID: deviceID, jetsonModel: "Test", osRelease: "Ubuntu",
                 agentVersion: "0.1.0"
             )
             try snapshot.insert(dbConn)
 
-            var job = Job(deviceID: deviceID, jobType: .healthCheck, status: .success)
+            let job = Job(deviceID: deviceID, jobType: .healthCheck, status: .success)
             try job.insert(dbConn)
 
-            var config = DeviceConfig(deviceID: deviceID)
+            let config = DeviceConfig(deviceID: deviceID)
             try config.insert(dbConn)
 
-            var connState = ConnectionState(deviceID: deviceID, status: .connected)
+            let connState = ConnectionState(deviceID: deviceID, status: .connected)
             try connState.insert(dbConn)
         }
 
@@ -90,11 +90,11 @@ struct EdgeCaseTests {
 
         let db = try DatabaseManager(path: tempDir.appendingPathComponent("test.sqlite").path)
 
-        var device = Device(displayName: "Config Test", hostname: "192.168.1.50")
+        let device = Device(displayName: "Config Test", hostname: "192.168.1.50")
         try db.writer.write { try device.insert($0) }
         let deviceID = try db.reader.read { try Device.fetchOne($0)!.id! }
 
-        var config = DeviceConfig(
+        let config = DeviceConfig(
             deviceID: deviceID,
             sshUsername: "nvidia",
             sshPort: 2222,
@@ -222,7 +222,7 @@ struct EdgeCaseTests {
             Issue.record("Should have thrown")
         } catch {
             // Expected
-            #expect(true)
+            #expect(Bool(true))
         }
     }
 

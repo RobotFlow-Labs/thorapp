@@ -57,15 +57,21 @@ if [[ ! -f "$INFO_PLIST" ]]; then
   exit 1
 fi
 
+plist_value() {
+  local plist="$1"
+  local key="$2"
+  /usr/bin/plutil -extract "$key" raw -o - "$plist" 2>/dev/null || true
+}
+
 EXPECTED_VERSION="${MARKETING_VERSION:-0.1.0}"
-PLIST_VERSION=$(defaults read "$INFO_PLIST" CFBundleShortVersionString 2>/dev/null || true)
+PLIST_VERSION=$(plist_value "$INFO_PLIST" CFBundleShortVersionString)
 if [[ "$PLIST_VERSION" != "$EXPECTED_VERSION" ]]; then
   echo "ERROR: Expected version $EXPECTED_VERSION in app bundle, found ${PLIST_VERSION:-<missing>}" >&2
   exit 1
 fi
 
 if [[ -n "${BUILD_NUMBER:-}" ]]; then
-  PLIST_BUILD=$(defaults read "$INFO_PLIST" CFBundleVersion 2>/dev/null || true)
+  PLIST_BUILD=$(plist_value "$INFO_PLIST" CFBundleVersion)
   if [[ "$PLIST_BUILD" != "$BUILD_NUMBER" ]]; then
     echo "ERROR: Expected build number $BUILD_NUMBER in app bundle, found ${PLIST_BUILD:-<missing>}" >&2
     exit 1

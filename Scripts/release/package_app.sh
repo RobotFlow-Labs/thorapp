@@ -29,7 +29,7 @@ if [[ "${SKIP_SWIFT_BUILD:-0}" != "1" ]]; then
   SWIFT_BUILD_ARGS=(--disable-sandbox)
 
   for ARCH in "${ARCH_LIST[@]}"; do
-    swift build -c "$CONF" --arch "$ARCH" "${SWIFT_BUILD_ARGS[@]}"
+    Scripts/dev/swiftw build -c "$CONF" --arch "$ARCH" "${SWIFT_BUILD_ARGS[@]}"
   done
 fi
 

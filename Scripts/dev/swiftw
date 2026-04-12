@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+ENV_ROOT="${THOR_SWIFT_ENV_ROOT:-$ROOT/.build/swift-env}"
+SWIFT_HOME="${THOR_SWIFT_HOME:-$ENV_ROOT/home}"
+XDG_CACHE_DIR="${THOR_SWIFT_XDG_CACHE_HOME:-$SWIFT_HOME/.cache}"
+CLANG_CACHE_DIR="${THOR_SWIFT_CLANG_MODULE_CACHE_PATH:-$XDG_CACHE_DIR/clang/ModuleCache}"
+
+mkdir -p "$SWIFT_HOME" "$XDG_CACHE_DIR" "$CLANG_CACHE_DIR"
+
+ARGS=("$@")
+if [[ $# -gt 0 ]]; then
+  case "$1" in
+    build|test|run|package)
+      ARGS=("$1" "--disable-sandbox" "${@:2}")
+      ;;
+  esac
+fi
+
+exec env \
+  HOME="$SWIFT_HOME" \
+  XDG_CACHE_HOME="$XDG_CACHE_DIR" \
+  CLANG_MODULE_CACHE_PATH="$CLANG_CACHE_DIR" \
+  SWIFTPM_DISABLE_SANDBOX=1 \
+  swift "${ARGS[@]}"

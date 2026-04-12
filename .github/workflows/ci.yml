@@ -20,16 +20,16 @@ jobs:
         run: swift --version
 
       - name: Resolve dependencies
-        run: swift package resolve
+        run: Scripts/dev/swiftw package resolve
 
       - name: Build (debug)
-        run: swift build
+        run: Scripts/dev/swiftw build
 
       - name: Build (release)
-        run: swift build -c release
+        run: Scripts/dev/swiftw build -c release
 
       - name: Build CLI
-        run: swift build --product thorctl
+        run: Scripts/dev/swiftw build --product thorctl
 
       # Note: Integration tests require Docker agent running.
       # The no-Docker lane still covers offline DB, pipeline, registry,
@@ -92,14 +92,14 @@ jobs:
           curl -sf http://localhost:8471/v1/health
 
       - name: Run all tests
-        run: swift test
+        run: Scripts/dev/swiftw test
 
       - name: Test thorctl
         run: |
-          swift run thorctl health 8470
-          swift run thorctl caps 8470
-          swift run thorctl modules 8470
-          swift run thorctl version
+          Scripts/dev/swiftw run thorctl health 8470
+          Scripts/dev/swiftw run thorctl caps 8470
+          Scripts/dev/swiftw run thorctl modules 8470
+          Scripts/dev/swiftw run thorctl version
 
       - name: Stop Docker sims
         if: always()
