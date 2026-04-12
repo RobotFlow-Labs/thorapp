@@ -1,12 +1,17 @@
 # Releasing THOR
 
-This repo is set up so a public release can be produced from a clean checkout without custom local steps.
+This repo is set up so a contributor smoke build or a production notarized release can be produced from a clean checkout without custom local steps.
+
+Production release rule:
+
+- Public tagged releases must be Developer ID signed and notarized.
+- Ad-hoc signed artifacts are for contributor smoke testing only and must not be treated as production distribution artifacts.
 
 ## Local Checklist
 
 1. Update `version.env`.
 2. Update `CHANGELOG.md`.
-3. Decide whether you are shipping the ad-hoc fallback path or a fully notarized build.
+3. Decide whether this is a contributor smoke build or a production notarized release.
 4. Run:
 
 ```bash
@@ -16,7 +21,7 @@ make dist
 ```
 
 Run `make test` when Docker Desktop is available and you want the simulator-backed integration sweep.
-`make dist` now runs the release verifier, so the ad-hoc fallback path is checked before artifacts are published. If Apple signing secrets are missing, the workflow intentionally falls back to the ad-hoc release path instead of failing late.
+`make dist` now runs the release verifier, so the local packaging path is checked before artifacts are published.
 
 Artifacts are written to `dist/`:
 
@@ -39,7 +44,8 @@ This repo includes `.github/workflows/release.yml`.
 - `workflow_dispatch` builds release artifacts for manual smoke testing.
 - Pushing a tag like `v0.1.0` builds the release bundle and attaches the `dist/` artifacts to a GitHub release.
 - If Apple signing secrets are configured, the workflow builds a universal Developer ID signed app, notarizes it, staples it, and validates the stapled bundle before publishing.
-- If Apple signing secrets are missing, the workflow falls back to the ad-hoc signed release path instead of failing late.
+- If Apple signing secrets are missing, `workflow_dispatch` still produces ad-hoc contributor smoke artifacts.
+- If Apple signing secrets are missing on a tag push, the workflow now fails instead of publishing a public ad-hoc release.
 
 ## Install And Update
 
@@ -71,5 +77,5 @@ SIGNING_MODE=developer-id NOTARIZE_APP=1 make dist
 ## Notes
 
 - The default release flow uses ad-hoc signing unless `APP_IDENTITY` is set.
-- The repo can now produce notarized builds, but ad-hoc signed artifacts remain the fallback path for contributors without Apple signing credentials.
+- The repo can now produce notarized builds, but ad-hoc signed artifacts remain a contributor-only fallback path for workflows without Apple signing credentials.
 - The Homebrew tap installs the CLI plus a `thorapp` launcher that opens the bundled GUI without needing to write into `/Applications`.

@@ -5,6 +5,26 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
+resolve_install_dir() {
+    local env_override="$1"
+    local primary="$2"
+    local fallback="$3"
+
+    if [[ -n "$env_override" ]]; then
+        mkdir -p "$env_override"
+        echo "$env_override"
+        return 0
+    fi
+
+    if mkdir -p "$primary" 2>/dev/null && [[ -w "$primary" ]]; then
+        echo "$primary"
+        return 0
+    fi
+
+    mkdir -p "$fallback"
+    echo "$fallback"
+}
+
 echo "=== THOR Installer ==="
 echo ""
 
@@ -40,30 +60,36 @@ echo ""
 echo "Building THOR..."
 swift build -c release
 
-# Install CLI
-echo ""
-echo "Installing thorctl to /usr/local/bin..."
-mkdir -p /usr/local/bin
-cp .build/release/thorctl /usr/local/bin/thorctl
-chmod +x /usr/local/bin/thorctl
+BIN_DIR="$(resolve_install_dir "${INSTALL_BIN_DIR:-}" "/usr/local/bin" "$HOME/.local/bin")"
+APP_DIR="$(resolve_install_dir "${INSTALL_APP_DIR:-}" "/Applications" "$HOME/Applications")"
 
 # Package app
 echo ""
 echo "Packaging THOR.app..."
-SIGNING_MODE=adhoc Scripts/release/package_app.sh release
+SIGNING_MODE=adhoc Scripts/package_app.sh release
 
-# Copy to /Applications
+# Install CLI
 echo ""
-if [[ -d "/Applications/THOR.app" ]]; then
-    rm -rf "/Applications/THOR.app"
+echo "Installing thorctl to $BIN_DIR..."
+install -m 0755 .build/release/thorctl "$BIN_DIR/thorctl"
+
+# Copy app bundle
+echo ""
+echo "Installing THOR.app to $APP_DIR..."
+if [[ -d "$APP_DIR/THOR.app" ]]; then
+    rm -rf "$APP_DIR/THOR.app"
 fi
-cp -R THORApp.app "/Applications/THOR.app"
+ditto THORApp.app "$APP_DIR/THOR.app"
 
 echo ""
 echo "=== Installation Complete ==="
 echo ""
-echo "  GUI:  open /Applications/THOR.app"
-echo "  CLI:  thorctl help"
+echo "  GUI:  open \"$APP_DIR/THOR.app\""
+echo "  CLI:  $BIN_DIR/thorctl help"
+if [[ "$BIN_DIR" != "/usr/local/bin" ]]; then
+    echo ""
+    echo "Add $BIN_DIR to your PATH if it is not already present."
+fi
 echo ""
 echo "Quick start:"
 echo "  1. thorctl connect YOUR_JETSON_IP"

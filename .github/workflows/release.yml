@@ -40,11 +40,21 @@ jobs:
       - name: Smoke local tap install
         run: make tap-smoke
 
+      - name: Require Apple signing for tagged releases
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          if [[ -z "${APP_IDENTITY}" || -z "${NOTARY_KEY_ID}" || -z "${NOTARY_ISSUER_ID}" || -z "${NOTARY_KEY_BASE64}" ]]; then
+            echo "Tagged releases require Apple signing and notarization secrets."
+            echo "Use workflow_dispatch for ad-hoc contributor smoke artifacts."
+            exit 1
+          fi
+
       - name: Build release artifacts
         run: |
           if [[ -n "${APP_IDENTITY}" && -n "${NOTARY_KEY_ID}" && -n "${NOTARY_ISSUER_ID}" && -n "${NOTARY_KEY_BASE64}" ]]; then
             SIGNING_MODE=developer-id NOTARIZE_APP=1 ARCHES="arm64 x86_64" make dist
           else
+            echo "Building ad-hoc contributor smoke artifacts (workflow_dispatch only)."
             make dist
           fi
 

@@ -32,9 +32,10 @@ jobs:
         run: swift build --product thorctl
 
       # Note: Integration tests require Docker agent running.
-      # Run unit tests only in CI (DB + Pipeline Composer).
-      - name: Run unit tests
-        run: swift test --filter "DatabaseTests|PipelineComposerTests"
+      # The no-Docker lane still covers offline DB, pipeline, registry,
+      # quick-start, readiness, and packaged CLI smoke tests.
+      - name: Run no-Docker release gate
+        run: make test-unit
 
       - name: Package .app bundle
         run: SIGNING_MODE=adhoc Scripts/release/package_app.sh release

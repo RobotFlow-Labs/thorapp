@@ -2,11 +2,12 @@
 
 ## Last Updated: 2026-04-12
 
-## Status: v0.1.0 release ready; v0.2 foundation is now implemented across setup, readiness, ROS2 workbench, Sensor Cockpit v1, typed deploy recipes, diagnostics bundles, and simulator-first guided flows
+## Status: repo-side v0.1.0 release hardening is in place; remaining blockers are external sign-off items (physical AGX Thor bring-up rehearsal, Docker-backed integration rerun when Docker is available, and a real Developer ID/notarized tag release)
 
 ## Stats
 - 100+ files, 19,800+ lines
-- 94 defined tests, with the 25-test non-Docker release gate passing locally
+- Current no-Docker release gate passes locally across database, pipeline, registry, quick-start, readiness, and CLI smoke coverage
+- Docker-backed simulator integration remains available via `make test` when Docker Desktop is running
 - Registry trust, setup wizard/doctor, readiness gating, ROS2 workbench, Sensor Cockpit, typed recipes, diagnostics bundles, and simulator parity are now present across app, agent, CLI, and tests
 
 ## v0.1.0 Release Checklist
@@ -28,7 +29,9 @@
 - [ ] Git tag v0.1.0
 - [ ] GitHub Release
 
-## MVP Readiness: 95%
+## Release Confidence
+- Repo-side install/update/release/docs paths are green locally
+- External release sign-off is still pending on hardware, Docker-backed integration rerun, and Apple-notarized distribution
 
 ## This Session — 2026-04-12
 - Added a real Jetson AGX Thor first-boot/operator path to THOR:
@@ -81,6 +84,24 @@
   - rehearse the end-to-end guided bring-up flow on a physical AGX Thor devkit
   - exercise the full Developer ID + notarization path with real Apple credentials
   - prove the Homebrew/tap install flow from a published tap, not only local formula syntax and packaging
+- Added a fourth production-hardening pass focused on release trust, install ergonomics, and reproducible smoke validation:
+  - `Scripts/release/tap_smoke.sh` now packages a local source archive from the current checkout and rewrites the temporary tap formula to install that archive, so `make tap-smoke` validates the actual worktree instead of the stale `v0.1.0` tag
+  - Homebrew launcher validation now checks that `thorapp` points at a real installed app bundle instead of assuming a specific `opt` path shape
+  - `Scripts/setup/install.sh` now supports writable fallback install locations plus `INSTALL_BIN_DIR` / `INSTALL_APP_DIR` overrides, making non-root install smoke reproducible
+  - `Formula/thorapp.rb` now uses the correct Homebrew `system` form for environment-scoped package builds and no longer implies the bottled install contains Docker simulator assets
+  - `.github/workflows/release.yml` now refuses to publish tagged releases without Apple signing/notarization secrets, while preserving `workflow_dispatch` ad-hoc smoke artifacts for contributors
+  - `Scripts/dev/run_tests.sh unit` and `.github/workflows/ci.yml` now include the offline CLI smoke coverage in the default no-Docker release gate
+- Revalidated the updated repo-side release path:
+  - `make test-unit`
+  - `swift test --filter versionSmoke`
+  - `swift test --filter helpSmoke`
+  - temp-dir installer smoke via `INSTALL_BIN_DIR` / `INSTALL_APP_DIR`
+  - `Scripts/release/tap_smoke.sh`
+  - `make dist`
+- Remaining follow-up after this pass:
+  - rerun `make test` once Docker Desktop is available on the host
+  - rehearse the guided AGX Thor first-boot flow on physical hardware
+  - run a real Developer ID + notarization tag release with Apple secrets
 
 ## This Session — 2026-04-04
 - Implemented the THOR v0.2 foundation plan end-to-end:

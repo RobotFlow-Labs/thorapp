@@ -31,15 +31,9 @@ class Thorapp < Formula
     (libexec/"agent").install Dir["Agent/*"]
 
     # Build and install .app bundle
-    system(
-      {
-        "SWIFT_BUILD_DISABLE_SANDBOX" => "1",
-        "SKIP_SWIFT_BUILD" => "1",
-      },
-      "bash",
-      package_script,
-      "release"
-    )
+    ENV["SWIFT_BUILD_DISABLE_SANDBOX"] = "1"
+    ENV["SKIP_SWIFT_BUILD"] = "1"
+    system "bash", package_script, "release"
     prefix.install "THORApp.app"
 
     (bin/"thorapp").write <<~EOS
@@ -64,8 +58,9 @@ class Thorapp < Formula
         The agent files are at: #{libexec}/agent/
         Copy them to your Jetson: scp -r #{libexec}/agent/ jetson@YOUR_IP:/opt/thor-agent/
 
-      Docker simulators (for testing without hardware):
-        cd #{prefix} && docker compose up -d
+      Docker simulators (from a source checkout, for testing without hardware):
+        git clone https://github.com/RobotFlow-Labs/thorapp.git
+        cd thorapp && docker compose up -d
 
       Quick start:
         1. thorctl connect YOUR_JETSON_IP
