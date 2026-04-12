@@ -285,4 +285,32 @@ struct DatabaseTests {
         #expect(storedRecipe?.name == "Registry Pull Preflight")
         #expect(storedDiagnostic?.archivePath == "/tmp/thor-diagnostics.zip")
     }
+
+    @Test("Guided flow progress persists its raw status values")
+    func guidedFlowProgressRoundTrip() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let dbPath = tempDir.appendingPathComponent("test.sqlite").path
+        let db = try DatabaseManager(path: dbPath)
+
+        var progress = GuidedFlowProgressRecord(
+            flowID: "thor.quickstart",
+            status: .inProgress,
+            progress: 0.4
+        )
+        try db.writer.write { dbConn in
+            try progress.insert(dbConn)
+        }
+
+        let stored = try db.reader.read { dbConn in
+            try GuidedFlowProgressRecord.fetchOne(dbConn)
+        }
+
+        #expect(stored?.flowID == "thor.quickstart")
+        #expect(stored?.status == .inProgress)
+        #expect(stored?.progress == 0.4)
+    }
 }

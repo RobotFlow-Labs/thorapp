@@ -92,6 +92,50 @@ struct JetsonThorProductionReadinessTests {
         #expect(smoke.contains("-i '/Users/test/My Keys/id_ed25519'"))
     }
 
+    @Test("Bootstrap helper and SSH key generation commands stay safe")
+    func bootstrapAndKeyGenerationCommandsStaySafe() {
+        let bootstrapWithKey = JetsonThorQuickStartSupport.bootstrapHelperCommand(
+            scriptPath: "/Users/test/Jetson Thor/Scripts/jetson-thor/bootstrap_ssh.sh",
+            target: "thor.user@192.168.55.1",
+            publicKeyPath: "/Users/test/My Keys/id_ed25519.pub"
+        )
+
+        let bootstrapWithoutKey = JetsonThorQuickStartSupport.bootstrapHelperCommand(
+            scriptPath: "/Users/test/Jetson Thor/Scripts/jetson-thor/bootstrap_ssh.sh",
+            target: "thor.user@192.168.55.1",
+            publicKeyPath: nil
+        )
+
+        let generatedKey = JetsonThorQuickStartSupport.sshKeyGenerationCommand(
+            keyPath: "/Users/test/My Keys/id_ed25519",
+            comment: "thor jetson setup"
+        )
+
+        #expect(bootstrapWithKey == "/bin/bash '/Users/test/Jetson Thor/Scripts/jetson-thor/bootstrap_ssh.sh' 'thor.user@192.168.55.1' '/Users/test/My Keys/id_ed25519.pub'")
+        #expect(bootstrapWithoutKey == "/bin/bash '/Users/test/Jetson Thor/Scripts/jetson-thor/bootstrap_ssh.sh' 'thor.user@192.168.55.1'")
+        #expect(generatedKey.contains("ssh-keygen -t ed25519"))
+        #expect(generatedKey.contains("'/Users/test/My Keys/id_ed25519'"))
+        #expect(generatedKey.contains("'thor jetson setup'"))
+        #expect(generatedKey.contains("'/Users/test/My Keys/id_ed25519.pub'"))
+    }
+
+    @Test("Public key candidates preserve recommendation order")
+    func publicKeyCandidatesPreserveRecommendationOrder() {
+        let candidates = JetsonThorQuickStartSupport.publicKeyCandidates(from: [
+            "/Users/test/.ssh/id_rsa.pub",
+            "/Users/test/.ssh/thor_jetson_fallback.pub",
+            "/Users/test/.ssh/id_ed25519.pub",
+        ])
+
+        #expect(candidates.map(\.path) == [
+            "/Users/test/.ssh/id_ed25519.pub",
+            "/Users/test/.ssh/thor_jetson_fallback.pub",
+            "/Users/test/.ssh/id_rsa.pub",
+        ])
+        #expect(candidates.first?.recommended == true)
+        #expect(candidates.dropFirst().allSatisfy { !$0.recommended })
+    }
+
     @Test("Readiness defaults and ranks are stable for setup UX")
     func readinessDefaultsAndOrderingStayStable() {
         let matrix = CapabilityMatrix(connectionMode: "usb", features: [
