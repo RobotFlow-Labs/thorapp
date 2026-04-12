@@ -2,6 +2,20 @@
 
 All notable changes to THOR are documented here.
 
+## [Unreleased]
+
+### Added
+- In-app updater for `THORApp.app` with automatic launch checks and manual `Check for Updates…` support
+- Local update-source support for `.app`, `.zip`, and `THORApp-update.json` manifest inputs
+- Post-quit installer helper that replaces `/Applications/THORApp.app` and relaunches the updated app
+- Release manifest generation in `dist/THORApp-update.json`
+- Updater regression tests covering version comparison, bundle metadata parsing, and checksum parsing
+
+### Changed
+- Settings now include an `Updates` tab for updater controls and local-source configuration
+- The source installer now installs `THORApp.app` under `/Applications` so the packaged app and updater target stay aligned
+- Release verification now validates the generated updater manifest alongside the packaged zip, CLI archive, and checksums
+
 ## [0.1.0] - 2026-03-28
 
 ### Initial Release

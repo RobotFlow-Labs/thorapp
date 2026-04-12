@@ -131,6 +131,7 @@ install_binary "$APP_NAME" "$APP/Contents/MacOS/$APP_NAME"
 APP_RESOURCES_DIR="$ROOT/Sources/$APP_NAME/Resources"
 if [[ -d "$APP_RESOURCES_DIR" ]]; then
   cp -R "$APP_RESOURCES_DIR/." "$APP/Contents/Resources/"
+  chmod +x "$APP/Contents/Resources/"*.sh 2>/dev/null || true
 fi
 
 # Bundle repo-owned runtime assets needed by the packaged app.

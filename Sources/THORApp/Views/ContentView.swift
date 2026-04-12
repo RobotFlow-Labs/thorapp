@@ -5,6 +5,13 @@ struct ContentView: View {
     @Environment(AppState.self) private var appState
     @AppStorage("onboardingComplete") private var onboardingComplete = false
 
+    private var updaterAlertBinding: Binding<AppUpdater.AlertState?> {
+        Binding(
+            get: { appState.updater.alertState },
+            set: { appState.updater.alertState = $0 }
+        )
+    }
+
     var body: some View {
         Group {
             if !onboardingComplete {
@@ -18,8 +25,35 @@ struct ContentView: View {
                 try appState.initializeDatabase()
                 try await appState.loadDevices()
                 appState.startHealthPolling()
+                await appState.checkForUpdatesOnLaunch()
             } catch {
                 print("Failed to initialize: \(error)")
+            }
+        }
+        .alert(item: updaterAlertBinding) { alert in
+            switch alert.kind {
+            case .available:
+                return Alert(
+                    title: Text(alert.title),
+                    message: Text(alert.message),
+                    primaryButton: .default(Text("Install")) {
+                        Task {
+                            await appState.installAvailableUpdate()
+                        }
+                    },
+                    secondaryButton: .cancel(Text("Later")) {
+                        appState.updater.dismissAlert()
+                    }
+                )
+
+            case .notice:
+                return Alert(
+                    title: Text(alert.title),
+                    message: Text(alert.message),
+                    dismissButton: .default(Text("OK")) {
+                        appState.updater.dismissAlert()
+                    }
+                )
             }
         }
     }

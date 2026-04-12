@@ -30,8 +30,9 @@ brew tap RobotFlow-Labs/tap
 brew install thorapp
 ```
 
-This installs both the **THOR.app** GUI and the **thorctl** CLI.
+This installs both the **THOR** GUI app and the **thorctl** CLI.
 If you already installed through Homebrew, see the Update section below.
+The packaged app bundle is `THORApp.app`.
 
 ### From Source
 
@@ -42,6 +43,12 @@ make build        # Build all targets
 make test-unit    # Fast local validation without Docker Desktop
 make install-cli  # Install thorctl to /usr/local/bin
 make run          # Package .app bundle and launch
+```
+
+If you want the source checkout installed into `/Applications` with the in-app updater enabled, use:
+
+```bash
+Scripts/setup/install.sh
 ```
 
 ### Update
@@ -60,6 +67,21 @@ git pull --rebase
 make test-unit
 make run
 ```
+
+If you are running the installed `/Applications/THORApp.app`, THOR now includes an in-app updater:
+
+- It checks for updates on launch by default.
+- You can trigger a manual check from `THOR > Check for Updates…` or the Settings `Updates` tab.
+- It can update from the latest GitHub release or from a local `.app`, `.zip`, or `THORApp-update.json` manifest.
+
+For local release testing from the repo:
+
+```bash
+make dist
+open /Applications/THORApp.app
+```
+
+Then point the installed app at `dist/THORApp-update.json`, or set that path in the app’s `Updates` settings tab.
 
 ### Requirements
 
@@ -91,6 +113,7 @@ Do not assume `nvidia` unless you explicitly created that username during OEM-co
 - [CONTRIBUTING.md](CONTRIBUTING.md) explains the local test and PR checklist.
 - [Scripts/README.md](Scripts/README.md) explains the canonical script layout.
 - `make dist` produces release-ready app and CLI artifacts in `dist/`.
+- `make dist` also emits `dist/THORApp-update.json` for the in-app updater.
 - [SECURITY.md](SECURITY.md) documents supported versions and private vulnerability reporting.
 
 ---
@@ -215,7 +238,7 @@ Run `thorctl help` for the full list.
 ```
 macOS                                    Jetson Device
 ┌──────────────────┐                    ┌──────────────────────┐
-│  THOR.app        │    SSH Tunnel      │  THOR Agent          │
+│  THORApp.app     │    SSH Tunnel      │  THOR Agent          │
 │  (SwiftUI)       │◄──────────────────►│  (Python/FastAPI)    │
 │                  │                    │  router-based API    │
 │  thorctl (CLI)   │    HTTP/JSON       │  10 router modules   │

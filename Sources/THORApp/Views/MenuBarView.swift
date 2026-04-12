@@ -67,7 +67,7 @@ struct MenuBarView: View {
     }
 
     private var footerSection: some View {
-        HStack {
+        HStack(spacing: 10) {
             Button("Open THOR") {
                 NSApplication.shared.activate(ignoringOtherApps: true)
                 if let window = NSApplication.shared.windows.first {
@@ -76,6 +76,15 @@ struct MenuBarView: View {
             }
             .buttonStyle(.plain)
             .font(.system(size: 12))
+
+            Button("Check Updates") {
+                Task {
+                    await appState.checkForUpdates(userInitiated: true)
+                }
+            }
+            .buttonStyle(.plain)
+            .font(.system(size: 12))
+            .disabled(appState.updater.isCheckingForUpdates || appState.updater.isInstallingUpdate)
 
             Spacer()
 

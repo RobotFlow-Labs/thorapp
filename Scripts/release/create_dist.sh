@@ -14,6 +14,8 @@ fi
 
 DIST_DIR="${DIST_DIR:-$ROOT/dist}"
 APP_NAME=${APP_NAME:-THORApp}
+BUNDLE_ID=${BUNDLE_ID:-com.robotflowlabs.thor}
+MACOS_MIN_VERSION=${MACOS_MIN_VERSION:-14.0}
 ARCH_LIST=( ${ARCHES:-} )
 if [[ ${#ARCH_LIST[@]} -eq 0 ]]; then
   ARCH_LIST=("$(uname -m)")
@@ -60,7 +62,7 @@ create_binary() {
 }
 
 mkdir -p "$DIST_DIR"
-rm -f "$DIST_DIR"/THORApp-*.zip "$DIST_DIR"/thorctl-*.tar.gz "$DIST_DIR"/SHA256SUMS.txt
+rm -f "$DIST_DIR"/THORApp-*.zip "$DIST_DIR"/thorctl-*.tar.gz "$DIST_DIR"/SHA256SUMS.txt "$DIST_DIR"/THORApp-update.json
 
 PACKAGE_SCRIPT="$ROOT/Scripts/package_app.sh"
 if [[ ! -f "$PACKAGE_SCRIPT" ]]; then
@@ -78,6 +80,7 @@ create_binary "thorctl" "$CLI_BINARY"
 APP_ZIP="$DIST_DIR/${APP_NAME}-${MARKETING_VERSION}-macos-${ARTIFACT_ARCH}.zip"
 CLI_TAR="$DIST_DIR/thorctl-${MARKETING_VERSION}-macos-${ARTIFACT_ARCH}.tar.gz"
 CHECKSUMS="$DIST_DIR/SHA256SUMS.txt"
+UPDATE_MANIFEST="$DIST_DIR/${APP_NAME}-update.json"
 
 if [[ "${NOTARIZE_APP:-0}" == "1" ]]; then
   if [[ -n "${NOTARY_KEY_ID:-}" && -n "${NOTARY_ISSUER_ID:-}" && ( -n "${NOTARY_KEY_PATH:-}" || -n "${NOTARY_KEY_BASE64:-}" ) ]]; then
@@ -97,9 +100,29 @@ tar -C "$TMP_DIR" -czf "$CLI_TAR" thorctl
   shasum -a 256 "$(basename "$APP_ZIP")" "$(basename "$CLI_TAR")" > "$(basename "$CHECKSUMS")"
 )
 
-"$ROOT/Scripts/release/verify_release.sh" "$CONF" "$ROOT/${APP_NAME}.app" "$APP_ZIP" "$CLI_TAR" "$CHECKSUMS"
+APP_SHA=$(awk -v artifact="$(basename "$APP_ZIP")" '$2 == artifact { print $1 }' "$CHECKSUMS")
+if [[ -z "$APP_SHA" ]]; then
+  echo "ERROR: Failed to compute SHA for $(basename "$APP_ZIP")" >&2
+  exit 1
+fi
+
+PUBLISHED_AT=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+cat > "$UPDATE_MANIFEST" <<JSON
+{
+  "bundleIdentifier": "${BUNDLE_ID}",
+  "version": "${MARKETING_VERSION}",
+  "build": ${BUILD_NUMBER:-0},
+  "minimumMacOSVersion": "${MACOS_MIN_VERSION}",
+  "archiveName": "$(basename "$APP_ZIP")",
+  "sha256": "${APP_SHA}",
+  "publishedAt": "${PUBLISHED_AT}"
+}
+JSON
+
+"$ROOT/Scripts/release/verify_release.sh" "$CONF" "$ROOT/${APP_NAME}.app" "$APP_ZIP" "$CLI_TAR" "$CHECKSUMS" "$UPDATE_MANIFEST"
 
 echo "Created release artifacts:"
 echo "  $APP_ZIP"
 echo "  $CLI_TAR"
 echo "  $CHECKSUMS"
+echo "  $UPDATE_MANIFEST"

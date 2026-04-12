@@ -21,6 +21,16 @@ struct THORApp: App {
             ContentView()
                 .environment(appState)
         }
+        .commands {
+            CommandGroup(after: .appInfo) {
+                Button("Check for Updates…") {
+                    Task {
+                        await appState.checkForUpdates(userInitiated: true)
+                    }
+                }
+                .disabled(appState.updater.isCheckingForUpdates || appState.updater.isInstallingUpdate)
+            }
+        }
 
         MenuBarExtra("THOR", systemImage: menuBarIcon) {
             MenuBarView()

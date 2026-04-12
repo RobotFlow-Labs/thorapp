@@ -49,7 +49,7 @@ let package = Package(
         // Tests
         .testTarget(
             name: "THORTests",
-            dependencies: ["THORShared"],
+            dependencies: ["THORShared", "THORApp"],
             path: "Tests/THORTests"
         ),
     ]

@@ -138,7 +138,7 @@ Phase 5 is complete when JetPack is installed, Docker reports healthy, and THOR�
 
 ## Related THOR Surfaces
 
-- `THOR.app` → onboarding and setup doctor now expose this same headless bring-up flow.
+- `THORApp.app` → onboarding and setup doctor now expose this same headless bring-up flow.
 - `thorctl quickstart [username]` prints the same Mac-side detection and first-boot commands. Replace `[username]` with the OEM-config username you actually created on the device. The `nvidia` examples in older notes are placeholders, not a required default.
 - `thorctl quickstart` is a guided helper, not a flash utility; it assumes you already have the bootable USB installer and a physical Thor board.
 

@@ -6,6 +6,7 @@ APP_PATH=${2:-}
 APP_ZIP=${3:-}
 CLI_TAR=${4:-}
 CHECKSUMS=${5:-}
+UPDATE_MANIFEST=${6:-}
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
@@ -14,8 +15,8 @@ if [[ -f "$ROOT/version.env" ]]; then
   source "$ROOT/version.env"
 fi
 
-if [[ -z "$APP_PATH" || -z "$APP_ZIP" || -z "$CLI_TAR" || -z "$CHECKSUMS" ]]; then
-  echo "Usage: $(basename "$0") <build-config> <app-path> <app-zip> <cli-tar> <checksums>" >&2
+if [[ -z "$APP_PATH" || -z "$APP_ZIP" || -z "$CLI_TAR" || -z "$CHECKSUMS" || -z "$UPDATE_MANIFEST" ]]; then
+  echo "Usage: $(basename "$0") <build-config> <app-path> <app-zip> <cli-tar> <checksums> <update-manifest>" >&2
   exit 1
 fi
 
@@ -23,6 +24,7 @@ APP_PATH="$(cd "$(dirname "$APP_PATH")" && pwd)/$(basename "$APP_PATH")"
 APP_ZIP="$(cd "$(dirname "$APP_ZIP")" && pwd)/$(basename "$APP_ZIP")"
 CLI_TAR="$(cd "$(dirname "$CLI_TAR")" && pwd)/$(basename "$CLI_TAR")"
 CHECKSUMS="$(cd "$(dirname "$CHECKSUMS")" && pwd)/$(basename "$CHECKSUMS")"
+UPDATE_MANIFEST="$(cd "$(dirname "$UPDATE_MANIFEST")" && pwd)/$(basename "$UPDATE_MANIFEST")"
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
@@ -31,7 +33,7 @@ if [[ ! -d "$APP_PATH" ]]; then
   exit 1
 fi
 
-for artifact in "$APP_ZIP" "$CLI_TAR" "$CHECKSUMS"; do
+for artifact in "$APP_ZIP" "$CLI_TAR" "$CHECKSUMS" "$UPDATE_MANIFEST"; do
   if [[ ! -f "$artifact" ]]; then
     echo "ERROR: Missing release artifact: $artifact" >&2
     exit 1
@@ -48,6 +50,12 @@ fi
 
 if ! grep -q "$(basename "$CLI_TAR")" "$CHECKSUMS"; then
   echo "ERROR: Checksums file does not reference $(basename "$CLI_TAR")" >&2
+  exit 1
+fi
+
+APP_SHA=$(awk -v artifact="$(basename "$APP_ZIP")" '$2 == artifact { print $1 }' "$CHECKSUMS")
+if [[ -z "$APP_SHA" ]]; then
+  echo "ERROR: Checksums file does not contain a SHA for $(basename "$APP_ZIP")" >&2
   exit 1
 fi
 
@@ -106,7 +114,39 @@ if [[ "${NOTARIZE_APP:-0}" == "1" || "${SIGNING_MODE:-}" == "developer-id" ]]; t
   fi
 fi
 
+python3 - <<'PY' "$UPDATE_MANIFEST" "$APP_SHA" "$PLIST_VERSION" "${BUILD_NUMBER:-0}" "$(basename "$APP_ZIP")"
+import json
+import pathlib
+import sys
+
+manifest_path = pathlib.Path(sys.argv[1])
+expected_sha = sys.argv[2]
+expected_version = sys.argv[3]
+expected_build = int(sys.argv[4])
+expected_archive = sys.argv[5]
+
+with manifest_path.open("r", encoding="utf-8") as handle:
+    manifest = json.load(handle)
+
+required = ["bundleIdentifier", "version", "build", "archiveName", "sha256"]
+missing = [key for key in required if key not in manifest]
+if missing:
+    raise SystemExit(f"ERROR: Update manifest is missing keys: {', '.join(missing)}")
+
+if manifest["bundleIdentifier"] != "com.robotflowlabs.thor":
+    raise SystemExit(f"ERROR: Unexpected bundle identifier in update manifest: {manifest['bundleIdentifier']}")
+if manifest["version"] != expected_version:
+    raise SystemExit(f"ERROR: Update manifest version mismatch: expected {expected_version}, found {manifest['version']}")
+if int(manifest["build"]) != expected_build:
+    raise SystemExit(f"ERROR: Update manifest build mismatch: expected {expected_build}, found {manifest['build']}")
+if manifest["archiveName"] != expected_archive:
+    raise SystemExit(f"ERROR: Update manifest archive mismatch: expected {expected_archive}, found {manifest['archiveName']}")
+if manifest["sha256"] != expected_sha:
+    raise SystemExit("ERROR: Update manifest SHA mismatch")
+PY
+
 echo "Verified release artifacts for $CONF:"
 echo "  $(basename "$APP_ZIP")"
 echo "  $(basename "$CLI_TAR")"
 echo "  $(basename "$CHECKSUMS")"
+echo "  $(basename "$UPDATE_MANIFEST")"

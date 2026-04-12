@@ -11,9 +11,9 @@ THOR keeps shell entrypoints under `Scripts/` and groups them by purpose so the 
 - `Scripts/release/package_app.sh`
   Produces a signed or ad-hoc signed `THORApp.app` bundle from SwiftPM outputs.
 - `Scripts/release/create_dist.sh`
-  Produces zipped app + CLI release artifacts in `dist/` with SHA-256 checksums.
+  Produces zipped app + CLI release artifacts in `dist/` with SHA-256 checksums and the `THORApp-update.json` updater manifest.
 - `Scripts/setup/install.sh`
-  Installs THOR locally from a checked-out repo.
+  Installs `THORApp.app` into `/Applications` (or a writable fallback) and installs `thorctl` from a checked-out repo.
 - `Scripts/jetson-thor/thor_serial.sh`
   Opens the Jetson AGX Thor debug or OEM-config serial console.
 - `Scripts/jetson-thor/bootstrap_ssh.sh`

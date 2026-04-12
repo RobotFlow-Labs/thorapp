@@ -2,7 +2,7 @@
 
 ## Last Updated: 2026-04-12
 
-## Status: repo-side v0.1.0 release hardening is in place, including sandbox-safe app storage fallbacks and clean no-Docker release packaging; remaining blockers are external sign-off items (physical AGX Thor bring-up rehearsal, Docker-backed integration rerun when Docker is available, and a real Developer ID/notarized tag release)
+## Status: repo-side v0.1.0 release hardening now includes a packaged in-app updater, local update-manifest support, and an installed `/Applications` app bundle; remaining blockers are external sign-off items (physical AGX Thor bring-up rehearsal, Docker-backed integration rerun when Docker is available, and a real Developer ID/notarized tag release)
 
 ## Stats
 - 100+ files, 19,800+ lines
@@ -34,6 +34,23 @@
 - External release sign-off is still pending on hardware, Docker-backed integration rerun, and Apple-notarized distribution
 
 ## This Session — 2026-04-12
+- Added a seventh production-hardening pass focused on application self-update and install ergonomics:
+  - new `AppUpdater` service in THORApp with launch-time update checks, manual `Check for Updates…`, and post-quit replacement into `/Applications/THORApp.app`
+  - local update sources are now first-class via configurable `.app`, `.zip`, or `THORApp-update.json` inputs, in addition to GitHub latest-release discovery
+  - packaged app bundles now embed `install_update.sh`, and release packaging emits a `dist/THORApp-update.json` manifest alongside the zip/tar/checksums artifacts
+  - settings now expose updater controls and local-source configuration, while the menu bar and app menu expose manual update checks
+  - installed the current `THORApp.app` into `/Applications` and preseeded the app defaults to watch the repo-local `dist/THORApp-update.json`
+- Revalidated the updater/release path after this pass:
+  - `Scripts/dev/swiftw build`
+  - `Scripts/dev/swiftw test --filter AppUpdaterTests`
+  - `SIGNING_MODE=adhoc Scripts/release/package_app.sh release`
+  - `make dist`
+  - `open -a /Applications/THORApp.app`
+- Remaining follow-up after this pass:
+  - rehearse an end-to-end update prompt against a newer local manifest or release candidate with incremented build metadata
+  - rerun `make test` once Docker Desktop is available on the host
+  - rehearse the guided AGX Thor first-boot flow on physical hardware
+  - run a real Developer ID + notarization tag release with Apple credentials and published release assets
 - Added a sixth production-hardening pass focused on app-managed storage and release-path correctness:
   - Swift build/test/release entrypoints now go through `Scripts/dev/swiftw`, which keeps SwiftPM artifacts in repo-owned writable directories instead of assuming unrestricted user-home cache access
   - `DatabaseManager` now exposes a THOR support-directory resolver with explicit override support plus a temporary fallback when `Application Support` is unavailable

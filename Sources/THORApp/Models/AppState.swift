@@ -19,6 +19,7 @@ final class AppState {
     var isLoading = false
     var onboardingComplete = false
 
+    let updater = AppUpdater()
     private(set) var db: DatabaseManager?
     let cameraBridgeService = CameraBridgeService()
     let keychain = KeychainManager()
@@ -259,6 +260,20 @@ final class AppState {
     func appendEvent(_ message: String) {
         recentEvents.insert("[\(ISO8601DateFormatter().string(from: Date()))] \(message)", at: 0)
         recentEvents = Array(recentEvents.prefix(100))
+    }
+
+    // MARK: - Updates
+
+    func checkForUpdatesOnLaunch() async {
+        await updater.checkForUpdatesOnLaunch()
+    }
+
+    func checkForUpdates(userInitiated: Bool) async {
+        await updater.checkForUpdates(userInitiated: userInitiated)
+    }
+
+    func installAvailableUpdate() async {
+        await updater.installAvailableUpdate()
     }
 
     // MARK: - Snapshots

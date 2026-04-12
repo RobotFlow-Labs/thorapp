@@ -20,4 +20,4 @@ This directory is organized so public readers can find the right material quickl
 ## Release Ops
 
 - [Releasing THOR](release/releasing.md)
-  Build distributable artifacts, notarize the app when credentials are available, and publish GitHub release assets.
+  Build distributable artifacts, emit the updater manifest, notarize the app when credentials are available, and publish GitHub release assets.

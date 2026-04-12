@@ -28,6 +28,9 @@ Artifacts are written to `dist/`:
 - `THORApp-<version>-macos-<arch>.zip`
 - `thorctl-<version>-macos-<arch>.tar.gz`
 - `SHA256SUMS.txt`
+- `THORApp-update.json`
+
+`THORApp-update.json` is the manifest consumed by THOR’s in-app updater. It records the bundle identifier, version, build number, archive name, and SHA-256 of the packaged app zip.
 
 ## Universal Builds
 
@@ -57,7 +60,22 @@ brew install thorapp
 brew upgrade thorapp
 ```
 
-Source users can update by pulling the repo, rerunning the local test gates, and rebuilding the distributable artifacts.
+Source users can update by pulling the repo, rerunning the local test gates, rebuilding the distributable artifacts, and reinstalling or relaunching the packaged app.
+
+For a repo-local updater smoke flow:
+
+```bash
+make dist
+Scripts/setup/install.sh
+open /Applications/THORApp.app
+```
+
+Then either:
+
+- set the app’s local update source to `dist/THORApp-update.json` in Settings > Updates, or
+- launch it with `THOR_UPDATER_LOCAL_SOURCE=/path/to/dist/THORApp-update.json`.
+
+The installed app can also consume a local `.app` bundle or `.zip` directly when you want to test upgrade candidates without publishing a GitHub release.
 
 ## Notarization
 
@@ -79,3 +97,4 @@ SIGNING_MODE=developer-id NOTARIZE_APP=1 make dist
 - The default release flow uses ad-hoc signing unless `APP_IDENTITY` is set.
 - The repo can now produce notarized builds, but ad-hoc signed artifacts remain a contributor-only fallback path for workflows without Apple signing credentials.
 - The Homebrew tap installs the CLI plus a `thorapp` launcher that opens the bundled GUI without needing to write into `/Applications`.
+- The source installer now installs the packaged GUI as `/Applications/THORApp.app`, which matches the updater’s replacement target.

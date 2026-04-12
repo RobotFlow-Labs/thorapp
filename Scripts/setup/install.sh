@@ -65,7 +65,7 @@ APP_DIR="$(resolve_install_dir "${INSTALL_APP_DIR:-}" "/Applications" "$HOME/App
 
 # Package app
 echo ""
-echo "Packaging THOR.app..."
+echo "Packaging THORApp.app..."
 SIGNING_MODE=adhoc Scripts/package_app.sh release
 
 # Install CLI
@@ -75,16 +75,19 @@ install -m 0755 .build/release/thorctl "$BIN_DIR/thorctl"
 
 # Copy app bundle
 echo ""
-echo "Installing THOR.app to $APP_DIR..."
+echo "Installing THORApp.app to $APP_DIR..."
 if [[ -d "$APP_DIR/THOR.app" ]]; then
     rm -rf "$APP_DIR/THOR.app"
 fi
-ditto THORApp.app "$APP_DIR/THOR.app"
+if [[ -d "$APP_DIR/THORApp.app" ]]; then
+    rm -rf "$APP_DIR/THORApp.app"
+fi
+ditto THORApp.app "$APP_DIR/THORApp.app"
 
 echo ""
 echo "=== Installation Complete ==="
 echo ""
-echo "  GUI:  open \"$APP_DIR/THOR.app\""
+echo "  GUI:  open \"$APP_DIR/THORApp.app\""
 echo "  CLI:  $BIN_DIR/thorctl help"
 if [[ "$BIN_DIR" != "/usr/local/bin" ]]; then
     echo ""
