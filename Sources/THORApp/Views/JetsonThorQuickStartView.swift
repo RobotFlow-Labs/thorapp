@@ -54,7 +54,7 @@ struct JetsonThorQuickStartView: View {
                 id: "\(flowBaseID)/bootstrap",
                 title: "Bootstrap SSH Keys + Sudo",
                 summary: "Push a public key, enable passwordless sudo, and make agent install / package deploy flows non-fragile.",
-                detail: "THOR vendors a repo-owned bootstrap helper so this no longer depends on a private local skill path. Password auth stays enabled unless you explicitly harden it later.",
+                detail: "THOR vendors a repo-owned bootstrap helper so this no longer depends on a private local skill path. If no SSH key is present, THOR will offer to generate one first, then continue with bootstrap.",
                 actionLabel: "Run Bootstrap Helper"
             ),
             StepDescriptor(
@@ -78,6 +78,11 @@ struct JetsonThorQuickStartView: View {
 
     private var recommendedPublicKey: String? {
         snapshot.publicKeyCandidates.first(where: { $0.recommended })?.path
+    }
+
+    private var resolvedUsername: String {
+        let trimmed = sshUsername.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? "nvidia" : trimmed
     }
 
     private var effectiveIdentityPath: String? {
@@ -130,6 +135,9 @@ struct JetsonThorQuickStartView: View {
                         TextField("nvidia", text: $sshUsername)
                             .textFieldStyle(.roundedBorder)
                             .frame(maxWidth: 220)
+                        Text("THOR uses this username for USB SSH, bootstrap, and JetPack install commands.")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.tertiary)
                     }
                     Spacer()
                     Button("Refresh Host State") {
@@ -140,16 +148,16 @@ struct JetsonThorQuickStartView: View {
 
                 detectionRow(
                     title: "Debug-USB serial",
-                    value: snapshot.debugSerialCandidates.first(where: { $0.recommended })?.path ?? "Not detected",
+                    value: serialValue(for: snapshot.debugSerialCandidates),
                     ok: !snapshot.debugSerialCandidates.isEmpty,
                     detail: snapshot.debugSerialCandidates.isEmpty
                         ? "Connect the Mac to Thor Debug-USB port 8."
-                        : "\(snapshot.debugSerialCandidates.count) usbserial device(s) visible."
+                        : "\(snapshot.debugSerialCandidates.count) usbserial device(s) visible. THOR will open the second one unless you override it."
                 )
 
                 detectionRow(
                     title: "OEM-config serial",
-                    value: snapshot.oemConfigCandidates.first(where: { $0.recommended })?.path ?? "Not detected",
+                    value: serialValue(for: snapshot.oemConfigCandidates),
                     ok: !snapshot.oemConfigCandidates.isEmpty,
                     detail: snapshot.oemConfigCandidates.isEmpty
                         ? "Move the cable to Thor USB-C 5a after the installer finishes."
@@ -168,7 +176,7 @@ struct JetsonThorQuickStartView: View {
                     value: recommendedPublicKey ?? "No public key found",
                     ok: recommendedPublicKey != nil,
                     detail: recommendedPublicKey == nil
-                        ? "Create or import an SSH key before running the bootstrap helper."
+                        ? "Create or import an SSH key before running the bootstrap helper. THOR can generate one for you."
                         : "The bootstrap helper will append this key to `authorized_keys`."
                 )
             }
@@ -195,6 +203,10 @@ struct JetsonThorQuickStartView: View {
                 Text("\(completedSteps) of \(steps.count) steps completed")
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
+
+                Text(detectionHint)
+                    .font(.system(size: 10))
+                    .foregroundStyle(.tertiary)
             }
         }
     }
@@ -357,23 +369,26 @@ struct JetsonThorQuickStartView: View {
 
         case "\(flowBaseID)/usb-ssh":
             return JetsonThorQuickStartSupport.usbSSHCommand(
-                username: sshUsername,
+                username: resolvedUsername,
                 identityPath: effectiveIdentityPath
             )
 
         case "\(flowBaseID)/bootstrap":
             guard let helper = helperScript(named: "bootstrap_ssh.sh") else {
-                return nil
+                return JetsonThorQuickStartSupport.sshKeyGenerationCommand()
             }
-            var command = "/bin/bash \(shellQuoted(helper)) \(shellQuoted("\(sshUsername)@192.168.55.1"))"
             if let recommendedPublicKey {
-                command += " \(shellQuoted(recommendedPublicKey))"
+                return JetsonThorQuickStartSupport.bootstrapHelperCommand(
+                    scriptPath: helper,
+                    target: "\(resolvedUsername)@192.168.55.1",
+                    publicKeyPath: recommendedPublicKey
+                )
             }
-            return command
+            return JetsonThorQuickStartSupport.sshKeyGenerationCommand()
 
         case "\(flowBaseID)/jetpack":
             return JetsonThorQuickStartSupport.jetPackInstallCommand(
-                username: sshUsername,
+                username: resolvedUsername,
                 identityPath: effectiveIdentityPath
             )
 
@@ -438,5 +453,45 @@ struct JetsonThorQuickStartView: View {
 
     private func shellQuoted(_ value: String) -> String {
         "'" + value.replacingOccurrences(of: "'", with: "'\"'\"'") + "'"
+    }
+
+    private var detectionHint: String {
+        var parts: [String] = []
+
+        if snapshot.debugSerialCandidates.isEmpty {
+            parts.append("no Debug-USB serial detected")
+        } else {
+            parts.append("\(snapshot.debugSerialCandidates.count) Debug-USB serial(s)")
+        }
+
+        if snapshot.oemConfigCandidates.isEmpty {
+            parts.append("no OEM-config usbmodem detected")
+        } else {
+            parts.append("\(snapshot.oemConfigCandidates.count) OEM-config serial(s)")
+        }
+
+        if snapshot.usbTetherDetected {
+            parts.append("USB tether online")
+        } else {
+            parts.append("USB tether not seen")
+        }
+
+        if recommendedPublicKey == nil {
+            parts.append("no SSH key found")
+        }
+
+        return parts.joined(separator: " • ")
+    }
+
+    private func serialValue(for candidates: [JetsonThorSerialCandidate]) -> String {
+        guard let recommended = candidates.first(where: { $0.recommended })?.path else {
+            return "Not detected"
+        }
+
+        if candidates.count > 1 {
+            return "\(recommended) (\(candidates.count) detected)"
+        }
+
+        return recommended
     }
 }

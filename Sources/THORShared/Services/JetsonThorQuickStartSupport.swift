@@ -203,13 +203,41 @@ public struct JetsonThorQuickStartSupport: Sendable {
         )
     }
 
+    public static func sshKeyGenerationCommand(
+        keyPath: String = "$HOME/.ssh/id_ed25519",
+        comment: String = "thor-jetson"
+    ) -> String {
+        let quotedKeyPath = shellQuoted(keyPath)
+        let quotedPublicKeyPath = shellQuoted("\(keyPath).pub")
+        return "if [ ! -f \(quotedPublicKeyPath) ]; then ssh-keygen -t ed25519 -f \(quotedKeyPath) -C \(shellQuoted(comment)); else echo \"SSH key already exists at \(keyPath)\"; fi"
+    }
+
+    public static func bootstrapHelperCommand(
+        scriptPath: String,
+        target: String,
+        publicKeyPath: String?
+    ) -> String {
+        var command = "/bin/bash \(shellQuoted(scriptPath)) \(shellQuoted(target))"
+        if let publicKeyPath, !publicKeyPath.isEmpty {
+            command += " \(shellQuoted(publicKeyPath))"
+        }
+        return command
+    }
+
     public static func sshCommand(
         username: String,
         host: String,
         identityPath: String? = nil,
         remoteCommand: String?
     ) -> String {
-        var components: [String] = ["ssh", "-o", "StrictHostKeyChecking=accept-new"]
+        var components: [String] = [
+            "ssh",
+            "-tt",
+            "-o", "ConnectTimeout=10",
+            "-o", "ServerAliveInterval=15",
+            "-o", "ServerAliveCountMax=2",
+            "-o", "StrictHostKeyChecking=accept-new"
+        ]
         if let identityPath, !identityPath.isEmpty {
             components += ["-i", shellQuoted(identityPath)]
         }

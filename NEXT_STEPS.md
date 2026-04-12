@@ -6,7 +6,7 @@
 
 ## Stats
 - 100+ files, 19,800+ lines
-- 89 tests, 9 suites, 0 failures
+- 94 defined tests, with the 25-test non-Docker release gate passing locally
 - Registry trust, setup wizard/doctor, readiness gating, ROS2 workbench, Sensor Cockpit, typed recipes, diagnostics bundles, and simulator parity are now present across app, agent, CLI, and tests
 
 ## v0.1.0 Release Checklist
@@ -62,6 +62,25 @@
 - Revalidated production packaging after the hardening pass:
   - `bash -n Scripts/release/notarize_app.sh Scripts/release/create_dist.sh Scripts/release/package_app.sh`
   - `make dist`
+- Added a third release-hardening pass focused on production operator/release ergonomics:
+  - quick-start support now emits TTY-aware SSH commands with timeouts/keepalive plus a safe SSH-key generation fallback
+  - onboarding/setup/CLI copy now exposes clearer first-boot guidance, troubleshooting, and helper discovery for AGX Thor headless bring-up
+  - repo-owned serial/bootstrap helpers were hardened for clearer failure modes and safer sudo/bootstrap behavior
+  - `Scripts/dev/run_tests.sh` now owns the split between Docker-backed integration tests and the non-Docker release gate used by `make test-unit`
+  - `Scripts/release/verify_release.sh` now validates archive integrity, version metadata, checksums, and code signing as part of `make dist`
+  - the Homebrew formula now installs a `thorapp` launcher instead of mutating `/Applications`
+- Revalidated the current local production path:
+  - `swift build`
+  - `make test-unit`
+  - `bash -n Scripts/jetson-thor/bootstrap_ssh.sh Scripts/jetson-thor/thor_serial.sh Scripts/release/create_dist.sh Scripts/release/notarize_app.sh Scripts/release/verify_release.sh`
+  - `./.build/debug/thorctl quickstart nvidia`
+  - `ruby -c Formula/thorapp.rb`
+  - `make dist`
+- Remaining follow-up after this pass:
+  - run the full Docker-backed integration suite again once Docker Desktop is available
+  - rehearse the end-to-end guided bring-up flow on a physical AGX Thor devkit
+  - exercise the full Developer ID + notarization path with real Apple credentials
+  - prove the Homebrew/tap install flow from a published tap, not only local formula syntax and packaging
 
 ## This Session — 2026-04-04
 - Implemented the THOR v0.2 foundation plan end-to-end:

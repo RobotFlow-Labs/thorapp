@@ -18,6 +18,10 @@ run_console() {
   if command -v tio >/dev/null 2>&1; then
     exec tio -b "$baud" "$device"
   else
+    if ! command -v screen >/dev/null 2>&1; then
+      echo "Neither tio nor screen is installed. Install one of them first." >&2
+      exit 1
+    fi
     exec screen "$device" "$baud"
   fi
 }
@@ -29,6 +33,8 @@ case "$MODE" in
     echo
     echo "OEM-config usbmodem devices:"
     list_usbmodem | nl || true
+    echo
+    echo "UEFI/Linux uses the second usbserial device; OEM-config uses the first usbmodem device."
     exit 0
     ;;
   uefi)

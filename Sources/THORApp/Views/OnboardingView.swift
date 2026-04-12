@@ -116,6 +116,9 @@ struct OnboardingView: View {
                 Text("If the board is brand new, THOR now includes the Mac-side serial, USB tether, bootstrap, and JetPack bring-up flow for a no-monitor setup.")
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
+                Text("Use `thorctl quickstart` when you want the exact same operator path from Terminal.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.tertiary)
 
                 HStack(spacing: 10) {
                     Button("Open Headless Quick Start") {

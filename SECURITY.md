@@ -42,3 +42,7 @@ Security reports are especially valuable for:
 - agent install/bootstrap flows
 - release signing, packaging, and update trust
 - Docker/ROS2/device command execution boundaries
+
+If you are validating a release artifact, include the exact download URL, checksum, and notarization status if available.
+
+Do not use the fallback ad-hoc release path for production deployment on real hardware. It exists to keep contributor builds unblocked, not to replace notarized distribution.

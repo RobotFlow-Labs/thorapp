@@ -75,7 +75,12 @@ CLI_TAR="$DIST_DIR/thorctl-${MARKETING_VERSION}-macos-${ARTIFACT_ARCH}.tar.gz"
 CHECKSUMS="$DIST_DIR/SHA256SUMS.txt"
 
 if [[ "${NOTARIZE_APP:-0}" == "1" ]]; then
-  "$ROOT/Scripts/release/notarize_app.sh" "$ROOT/${APP_NAME}.app" "$APP_ZIP"
+  if [[ -n "${NOTARY_KEY_ID:-}" && -n "${NOTARY_ISSUER_ID:-}" && ( -n "${NOTARY_KEY_PATH:-}" || -n "${NOTARY_KEY_BASE64:-}" ) ]]; then
+    "$ROOT/Scripts/release/notarize_app.sh" "$ROOT/${APP_NAME}.app" "$APP_ZIP"
+  else
+    echo "WARNING: NOTARIZE_APP=1 requested but notarization secrets are incomplete; continuing with ad-hoc signed artifacts." >&2
+    ditto -c -k --sequesterRsrc --keepParent "$ROOT/${APP_NAME}.app" "$APP_ZIP"
+  fi
 else
   ditto -c -k --sequesterRsrc --keepParent "$ROOT/${APP_NAME}.app" "$APP_ZIP"
 fi
@@ -86,6 +91,8 @@ tar -C "$TMP_DIR" -czf "$CLI_TAR" thorctl
   cd "$DIST_DIR"
   shasum -a 256 "$(basename "$APP_ZIP")" "$(basename "$CLI_TAR")" > "$(basename "$CHECKSUMS")"
 )
+
+"$ROOT/Scripts/release/verify_release.sh" "$CONF" "$ROOT/${APP_NAME}.app" "$APP_ZIP" "$CLI_TAR" "$CHECKSUMS"
 
 echo "Created release artifacts:"
 echo "  $APP_ZIP"

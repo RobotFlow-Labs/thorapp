@@ -266,10 +266,11 @@ func connectionDoctor(port: Int) async {
 func quickStart(username: String) {
     let support = JetsonThorQuickStartSupport()
     let snapshot = support.snapshot()
+    let resolvedUsername = username.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "nvidia" : username
 
     print("Jetson AGX Thor headless quick start")
     print(String(repeating: "-", count: 72))
-    print("User: \(username)")
+    print("User: \(resolvedUsername)")
     print("")
 
     if let debugTTY = snapshot.debugSerialCandidates.first(where: { $0.recommended })?.path {
@@ -278,6 +279,7 @@ func quickStart(username: String) {
     } else {
         print("[debug-usb]  not detected")
         print("  fix: connect the Mac to Thor Debug-USB port 8 and re-run this command")
+        print("  helper: Scripts/jetson-thor/thor_serial.sh list")
     }
 
     if let oemTTY = snapshot.oemConfigCandidates.first(where: { $0.recommended })?.path {
@@ -293,24 +295,45 @@ func quickStart(username: String) {
         print("[usb-tether] host addresses: \(snapshot.usbTetherHostAddresses.joined(separator: ", "))")
     } else {
         print("[usb-tether] no 192.168.55.x host address detected yet")
+        print("  fix: confirm the cable is in Thor USB-C 5a and wait for the tether interface to appear")
     }
-    print("  SSH:           \(JetsonThorQuickStartSupport.usbSSHCommand(username: username))")
-    print("  JetPack:       \(JetsonThorQuickStartSupport.jetPackInstallCommand(username: username))")
-    print("  Docker smoke:  \(JetsonThorQuickStartSupport.dockerSmokeTestCommand(username: username))")
+    print("  SSH:           \(JetsonThorQuickStartSupport.usbSSHCommand(username: resolvedUsername))")
+    print("  JetPack:       \(JetsonThorQuickStartSupport.jetPackInstallCommand(username: resolvedUsername))")
+    print("  Docker smoke:  \(JetsonThorQuickStartSupport.dockerSmokeTestCommand(username: resolvedUsername))")
 
     if let publicKey = snapshot.publicKeyCandidates.first(where: { $0.recommended })?.path {
         print("")
         print("[pubkey]      \(publicKey)")
-        print("  Bootstrap:    Scripts/jetson-thor/bootstrap_ssh.sh \(username)@192.168.55.1 \(publicKey)")
+        if let helper = quickStartHelperScript(named: "bootstrap_ssh.sh") {
+            print("  Bootstrap:    \(JetsonThorQuickStartSupport.bootstrapHelperCommand(scriptPath: helper, target: "\(resolvedUsername)@192.168.55.1", publicKeyPath: publicKey))")
+        } else {
+            print("  Bootstrap:    Scripts/jetson-thor/bootstrap_ssh.sh \(resolvedUsername)@192.168.55.1 \(publicKey)")
+        }
     } else {
         print("")
         print("[pubkey]      no public key detected under ~/.ssh")
+        print("  next: create one with \(JetsonThorQuickStartSupport.sshKeyGenerationCommand())")
     }
 
     print("")
+    print("Summary:")
+    print("  Debug-USB serials: \(snapshot.debugSerialCandidates.count)")
+    print("  OEM-config serials: \(snapshot.oemConfigCandidates.count)")
+    print("  USB tether: \(snapshot.usbTetherDetected ? "detected" : "not detected")")
     print("Docs:")
     print("  Repo runbook: docs/setup/jetson-agx-thor-headless-quickstart.md")
     print("  NVIDIA guide: https://docs.nvidia.com/jetson/agx-thor-devkit/user-guide/latest/quick_start.html")
+}
+
+private func quickStartHelperScript(named name: String) -> String? {
+    let candidates = [
+        ProcessInfo.processInfo.environment["THOR_JETSON_HELPERS_DIR"].map { "\($0)/\(name)" },
+        FileManager.default.currentDirectoryPath + "/Scripts/jetson-thor/\(name)",
+    ]
+
+    return candidates
+        .compactMap { $0 }
+        .first(where: { FileManager.default.fileExists(atPath: $0) })
 }
 
 func listRegistries() async {

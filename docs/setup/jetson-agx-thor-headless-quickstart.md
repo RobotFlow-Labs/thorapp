@@ -92,6 +92,12 @@ This will:
 2. Enable passwordless sudo for the remote user
 3. Optionally disable password auth if you set `DISABLE_PASSWORD_AUTH=1`
 
+If THOR says no key was detected, generate one first:
+
+```bash
+ssh-keygen -t ed25519 -f "$HOME/.ssh/id_ed25519" -C "thor-jetson"
+```
+
 ## Phase 5 — JetPack / Docker Readiness
 
 Install JetPack after the first SSH session:
@@ -116,6 +122,13 @@ thorctl doctor 8470
 
 - `THOR.app` → onboarding and setup doctor now expose this same headless bring-up flow.
 - `thorctl quickstart [username]` prints the same Mac-side detection and first-boot commands.
+
+## Troubleshooting
+
+- If the Debug-USB console does not appear, run `Scripts/jetson-thor/thor_serial.sh list` and confirm the second `/dev/cu.usbserial-*` path is present.
+- If the OEM-config console does not appear, confirm the cable is on Thor USB-C `5a`, not the Debug-USB port.
+- If the bootstrap helper pauses at `sudo`, stay in the terminal. THOR opens the command with a TTY so the normal password prompt can work.
+- If the USB tether never appears, wait a few seconds after the CUI setup completes and check that macOS assigned a `192.168.55.x` address.
 
 ## Official NVIDIA References
 

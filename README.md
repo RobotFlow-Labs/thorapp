@@ -14,7 +14,7 @@
   <a href="https://github.com/RobotFlow-Labs/thorapp/actions"><img src="https://github.com/RobotFlow-Labs/thorapp/actions/workflows/ci.yml/badge.svg" alt="CI"/></a>
   <img src="https://img.shields.io/badge/platform-macOS%2014%2B-blue" alt="macOS 14+"/>
   <img src="https://img.shields.io/badge/swift-6.2-orange" alt="Swift 6.2"/>
-  <img src="https://img.shields.io/badge/tests-89%20passing-green" alt="89 tests"/>
+  <img src="https://img.shields.io/badge/tests-94%20defined-green" alt="94 tests"/>
   <img src="https://img.shields.io/badge/endpoints-50%2B-purple" alt="50+ API endpoints"/>
   <img src="https://img.shields.io/badge/license-MIT-lightgrey" alt="MIT License"/>
 </p>
@@ -252,8 +252,8 @@ thorapp/
 ```bash
 make build          # Debug build
 make release        # Release build
-make test           # Run all 71 tests
-make test-unit      # Unit tests only (no Docker)
+make test           # Run the full suite; starts sims if Docker daemon is available
+make test-unit      # Run the non-Docker suite
 make run            # Package + launch app
 make dist           # Build release artifacts into dist/
 make docker-up      # Start Jetson simulators

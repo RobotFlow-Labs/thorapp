@@ -9,9 +9,12 @@ This repo is set up so a public release can be produced from a clean checkout wi
 3. Run:
 
 ```bash
-make test
+make test-unit
 make dist
 ```
+
+Run `make test` as well when Docker Desktop is available and you want the simulator-backed integration sweep.
+`make dist` now runs the release verifier, so the ad-hoc fallback path is checked before artifacts are published.
 
 Artifacts are written to `dist/`:
 
@@ -33,7 +36,8 @@ This repo includes `.github/workflows/release.yml`.
 
 - `workflow_dispatch` builds release artifacts for manual smoke testing.
 - Pushing a tag like `v0.1.0` builds the release bundle and attaches the `dist/` artifacts to a GitHub release.
-- If Apple signing secrets are configured, the workflow builds a universal Developer ID signed app and notarizes it before publishing.
+- If Apple signing secrets are configured, the workflow builds a universal Developer ID signed app, notarizes it, staples it, and validates the stapled bundle before publishing.
+- If Apple signing secrets are missing, the workflow falls back to the ad-hoc signed release path instead of failing late.
 
 ## Notarization
 
@@ -54,3 +58,4 @@ SIGNING_MODE=developer-id NOTARIZE_APP=1 make dist
 
 - The default release flow uses ad-hoc signing unless `APP_IDENTITY` is set.
 - The repo can now produce notarized builds, but ad-hoc signed artifacts remain the fallback path for contributors without Apple signing credentials.
+- The Homebrew tap installs the CLI plus a `thorapp` launcher that opens the bundled GUI without needing to write into `/Applications`.

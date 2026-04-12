@@ -2,11 +2,12 @@ class Thorapp < Formula
   desc "Native macOS control center for NVIDIA Jetson devices"
   homepage "https://github.com/RobotFlow-Labs/thorapp"
   url "https://github.com/RobotFlow-Labs/thorapp.git",
-      tag:      "v0.1.0",
-      revision: "HEAD"
+      tag: "v0.1.0"
+  version "0.1.0"
   license "MIT"
+  head "https://github.com/RobotFlow-Labs/thorapp.git", branch: "main"
 
-  depends_on xcode: ["15.0", :build]
+  depends_on xcode: ["16.3", :build]
   depends_on macos: :sonoma
 
   def install
@@ -24,13 +25,12 @@ class Thorapp < Formula
     # Build and install .app bundle
     system "bash", "Scripts/release/package_app.sh", "release"
     prefix.install "THORApp.app"
-  end
 
-  def post_install
-    # Symlink the app to /Applications for easy access
-    app_link = Pathname("/Applications/THOR.app")
-    app_link.unlink if app_link.symlink?
-    app_link.make_symlink(prefix/"THORApp.app")
+    (bin/"thorapp").write <<~EOS
+      #!/bin/bash
+      exec open -a "#{prefix}/THORApp.app" "$@"
+    EOS
+    chmod 0555, bin/"thorapp"
   end
 
   def caveats
@@ -41,7 +41,7 @@ class Thorapp < Formula
         thorctl help
 
       GUI app:
-        open /Applications/THOR.app
+        thorapp
         # or: open #{prefix}/THORApp.app
 
       Jetson agent:
@@ -61,5 +61,7 @@ class Thorapp < Formula
 
   test do
     assert_match "thorctl", shell_output("#{bin}/thorctl version")
+    assert_predicate prefix/"THORApp.app/Contents/Info.plist", :exist?
+    assert_predicate bin/"thorapp", :exist?
   end
 end

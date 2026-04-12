@@ -61,11 +61,23 @@ struct JetsonThorQuickStartSupportTests {
             username: "nvidia",
             identityPath: "/Users/test/.ssh/id_ed25519"
         )
+        let bootstrap = JetsonThorQuickStartSupport.bootstrapHelperCommand(
+            scriptPath: "Scripts/jetson-thor/bootstrap_ssh.sh",
+            target: "nvidia@192.168.55.1",
+            publicKeyPath: "/Users/test/.ssh/id_ed25519.pub"
+        )
+        let keygen = JetsonThorQuickStartSupport.sshKeyGenerationCommand()
 
         #expect(uefi.contains("9600"))
         #expect(uefi.contains("242"))
         #expect(oem.contains("115200"))
+        #expect(ssh.contains("-tt"))
+        #expect(ssh.contains("ConnectTimeout=10"))
         #expect(ssh.contains("nvidia@192.168.55.1"))
         #expect(ssh.contains("/Users/test/.ssh/id_ed25519"))
+        #expect(bootstrap.contains("bootstrap_ssh.sh"))
+        #expect(bootstrap.contains("nvidia@192.168.55.1"))
+        #expect(keygen.contains("$HOME/.ssh/id_ed25519"))
+        #expect(keygen.contains("ssh-keygen"))
     }
 }

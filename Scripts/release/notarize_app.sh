@@ -24,7 +24,7 @@ TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
 if [[ -n "${NOTARY_KEY_PATH:-}" ]]; then
-  KEY_PATH="$NOTARY_KEY_PATH"
+  KEY_PATH="$(cd "$(dirname "$NOTARY_KEY_PATH")" && pwd)/$(basename "$NOTARY_KEY_PATH")"
 elif [[ -n "${NOTARY_KEY_BASE64:-}" ]]; then
   KEY_PATH="$TMP_DIR/AuthKey_${NOTARY_KEY_ID}.p8"
   printf '%s' "$NOTARY_KEY_BASE64" | base64 --decode > "$KEY_PATH"
@@ -51,5 +51,6 @@ xcrun notarytool submit "$ARCHIVE_PATH" \
   --wait
 
 xcrun stapler staple "$APP_PATH"
+xcrun stapler validate "$APP_PATH"
 
 echo "Notarized and stapled: $APP_PATH"

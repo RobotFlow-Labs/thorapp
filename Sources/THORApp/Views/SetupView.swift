@@ -39,6 +39,9 @@ struct SetupView: View {
             Text("Classify failures, retry connection, install the agent, and see what still blocks a healthy robotics session.")
                 .font(.system(size: 12))
                 .foregroundStyle(.secondary)
+            Text("The headless AGX Thor first-boot path is embedded below so operators do not need a separate runbook window.")
+                .font(.system(size: 11))
+                .foregroundStyle(.tertiary)
         }
     }
 

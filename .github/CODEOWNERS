@@ -14,3 +14,6 @@
 /.github/ @RobotFlow-Labs/platform
 /Scripts/release/ @RobotFlow-Labs/platform
 /Formula/ @RobotFlow-Labs/platform
+/docs/release/ @RobotFlow-Labs/platform
+/docs/setup/ @RobotFlow-Labs/platform
+/SECURITY.md @RobotFlow-Labs/platform

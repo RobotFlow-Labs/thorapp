@@ -9,7 +9,6 @@ git clone https://github.com/RobotFlow-Labs/thorapp.git
 cd thorapp
 make build
 make test
-make docker-up   # Start Jetson simulators
 make run          # Launch the app
 ```
 
@@ -41,10 +40,11 @@ Open an issue with the `enhancement` label describing:
 1. Fork the repo and create your branch from `main`
 2. Write code following existing patterns
 3. Add tests for new endpoints and features
-4. Ensure `make test` passes (all 71+ tests)
-5. Ensure `swift build` has 0 warnings
-6. Update the README if you add user-facing features
-7. Submit a PR with a clear description
+4. Ensure `make test` passes when Docker Desktop is running
+5. Ensure `make test-unit` passes for the non-Docker suite
+6. Ensure `swift build` has 0 warnings
+7. Update the README if you add user-facing features
+8. Submit a PR with a clear description
 
 ### Repo Layout
 
@@ -60,7 +60,7 @@ Open an issue with the `enhancement` label describing:
 - **Swift**: Follow Apple API Design Guidelines. Use `@Observable`, `@MainActor`, structured concurrency.
 - **Python**: Follow PEP 8. Use type hints where practical.
 - **Views**: One view per file. Use `GroupBox` for cards, system colors, 8pt spacing grid.
-- **Tests**: Use Swift Testing framework (`#expect`, `#require`). Test against real Docker sim.
+- **Tests**: Use Swift Testing framework (`#expect`, `#require`). Integration coverage runs against the real Docker sims.
 - **No mocks**: All integration tests hit the real Docker Jetson simulator.
 
 ### Adding a New Agent Endpoint

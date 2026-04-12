@@ -9,7 +9,7 @@ help:
 	@echo "Development:"
 	@echo "  build       Build all targets (debug)"
 	@echo "  release     Build all targets (release)"
-	@echo "  test        Run all tests"
+	@echo "  test        Run the full suite (starts Docker sims if daemon is available)"
 	@echo "  test-unit   Run unit tests only (no Docker needed)"
 	@echo "  run         Build, package, and launch the app"
 	@echo "  package     Package .app bundle (release)"
@@ -39,10 +39,10 @@ release:
 
 # Test
 test:
-	swift test
+	Scripts/dev/run_tests.sh all
 
 test-unit:
-	swift test --filter "DatabaseTests|PipelineComposerTests|EdgeCaseTests"
+	Scripts/dev/run_tests.sh unit
 
 # Run
 run: package

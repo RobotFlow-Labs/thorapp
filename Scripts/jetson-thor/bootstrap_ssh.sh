@@ -4,6 +4,7 @@ set -euo pipefail
 TARGET="${1:-}"
 PUBKEY="${2:-}"
 DISABLE_PASSWORD_AUTH="${DISABLE_PASSWORD_AUTH:-0}"
+SSH_OPTS=(-tt -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 -o ServerAliveInterval=15 -o ServerAliveCountMax=2)
 
 usage() {
   cat <<'EOF'
@@ -67,17 +68,27 @@ fi
 REMOTE_USER="${TARGET%@*}"
 
 echo "[1/3] Installing public key from $PUBKEY on $TARGET"
-cat "$PUBKEY" | ssh -o StrictHostKeyChecking=accept-new "$TARGET" \
-  "umask 077; mkdir -p ~/.ssh; cat >> ~/.ssh/authorized_keys; chmod 700 ~/.ssh; chmod 600 ~/.ssh/authorized_keys"
+ssh "${SSH_OPTS[@]}" "$TARGET" 'umask 077; mkdir -p ~/.ssh; cat >> ~/.ssh/authorized_keys; chmod 700 ~/.ssh; chmod 600 ~/.ssh/authorized_keys' < "$PUBKEY"
 
 echo "[2/3] Enabling passwordless sudo for $REMOTE_USER"
-ssh "$TARGET" \
-  "printf '%s ALL=(ALL) NOPASSWD:ALL\n' \"\$(whoami)\" | sudo tee /etc/sudoers.d/90-thor-bootstrap >/dev/null && sudo chmod 440 /etc/sudoers.d/90-thor-bootstrap"
+ssh "${SSH_OPTS[@]}" "$TARGET" 'sudo bash -s' <<'REMOTE'
+set -euo pipefail
+REMOTE_USER="${SUDO_USER:-}"
+if [[ -z "$REMOTE_USER" ]]; then
+  echo "Unable to determine remote user for sudoers entry." >&2
+  exit 1
+fi
+printf '%s ALL=(ALL) NOPASSWD:ALL\n' "$REMOTE_USER" > /etc/sudoers.d/90-thor-bootstrap
+chmod 440 /etc/sudoers.d/90-thor-bootstrap
+REMOTE
 
 if [[ "$DISABLE_PASSWORD_AUTH" == "1" ]]; then
   echo "[3/3] Disabling SSH password authentication"
-  ssh "$TARGET" \
-    "sudo sed -i 's/^#\\?PasswordAuthentication .*/PasswordAuthentication no/' /etc/ssh/sshd_config && (sudo systemctl restart ssh || sudo systemctl restart sshd)"
+  ssh "${SSH_OPTS[@]}" "$TARGET" 'sudo bash -s' <<'REMOTE'
+set -euo pipefail
+sed -i 's/^#\?PasswordAuthentication .*/PasswordAuthentication no/' /etc/ssh/sshd_config
+systemctl restart ssh || systemctl restart sshd
+REMOTE
 else
   echo "[3/3] Leaving SSH password authentication enabled (set DISABLE_PASSWORD_AUTH=1 to harden it)"
 fi
