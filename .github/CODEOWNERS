@@ -1,0 +1,16 @@
+# Default ownership
+* @RobotFlow-Labs/platform
+
+# Core app and shared runtime
+/Sources/THORApp/ @RobotFlow-Labs/platform
+/Sources/THORShared/ @RobotFlow-Labs/platform
+/Sources/THORctl/ @RobotFlow-Labs/platform
+
+# Jetson agent and simulator
+/Agent/ @RobotFlow-Labs/platform
+/Docker/ @RobotFlow-Labs/platform
+
+# Release and repo operations
+/.github/ @RobotFlow-Labs/platform
+/Scripts/release/ @RobotFlow-Labs/platform
+/Formula/ @RobotFlow-Labs/platform

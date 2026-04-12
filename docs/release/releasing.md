@@ -33,8 +33,24 @@ This repo includes `.github/workflows/release.yml`.
 
 - `workflow_dispatch` builds release artifacts for manual smoke testing.
 - Pushing a tag like `v0.1.0` builds the release bundle and attaches the `dist/` artifacts to a GitHub release.
+- If Apple signing secrets are configured, the workflow builds a universal Developer ID signed app and notarizes it before publishing.
+
+## Notarization
+
+For a locally notarized build, provide:
+
+- `APP_IDENTITY`
+- `NOTARY_KEY_ID`
+- `NOTARY_ISSUER_ID`
+- `NOTARY_KEY_PATH` or `NOTARY_KEY_BASE64`
+
+Then run:
+
+```bash
+SIGNING_MODE=developer-id NOTARIZE_APP=1 make dist
+```
 
 ## Notes
 
 - The default release flow uses ad-hoc signing unless `APP_IDENTITY` is set.
-- Notarization is intentionally left as a later release-hardening step so the public repo can still ship testable artifacts immediately.
+- The repo can now produce notarized builds, but ad-hoc signed artifacts remain the fallback path for contributors without Apple signing credentials.

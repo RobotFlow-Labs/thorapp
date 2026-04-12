@@ -66,6 +66,7 @@ Scripts/jetson-thor/bootstrap_ssh.sh nvidia@192.168.55.1 ~/.ssh/id_ed25519.pub
 - [docs/README.md](docs/README.md) indexes setup, product, and release documentation.
 - [Scripts/README.md](Scripts/README.md) explains the canonical script layout.
 - `make dist` produces release-ready app and CLI artifacts in `dist/`.
+- [SECURITY.md](SECURITY.md) documents supported versions and private vulnerability reporting.
 
 ---
 

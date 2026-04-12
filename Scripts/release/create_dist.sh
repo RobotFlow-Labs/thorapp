@@ -74,7 +74,12 @@ APP_ZIP="$DIST_DIR/${APP_NAME}-${MARKETING_VERSION}-macos-${ARTIFACT_ARCH}.zip"
 CLI_TAR="$DIST_DIR/thorctl-${MARKETING_VERSION}-macos-${ARTIFACT_ARCH}.tar.gz"
 CHECKSUMS="$DIST_DIR/SHA256SUMS.txt"
 
-ditto -c -k --sequesterRsrc --keepParent "$ROOT/${APP_NAME}.app" "$APP_ZIP"
+if [[ "${NOTARIZE_APP:-0}" == "1" ]]; then
+  "$ROOT/Scripts/release/notarize_app.sh" "$ROOT/${APP_NAME}.app" "$APP_ZIP"
+else
+  ditto -c -k --sequesterRsrc --keepParent "$ROOT/${APP_NAME}.app" "$APP_ZIP"
+fi
+
 tar -C "$TMP_DIR" -czf "$CLI_TAR" thorctl
 
 (

@@ -53,6 +53,15 @@
   - rehearse the new guided first-boot flow on a real AGX Thor devkit
   - remove remaining build warnings in shared/app services before public release
   - decide whether v0.1 public releases will stay ad-hoc signed or move to notarized builds
+- Added a second production-hardening pass on top of the pushed baseline:
+  - `SECURITY.md` for private vulnerability disclosure and supported-version policy
+  - `.github/CODEOWNERS` and `.editorconfig` for clearer repo governance and consistency
+  - notarization-capable release script at `Scripts/release/notarize_app.sh`
+  - release workflow now attempts universal Developer ID signed + notarized artifacts when Apple secrets are configured, while preserving ad-hoc fallback builds for contributors
+  - release docs updated to cover notarization inputs and behavior
+- Revalidated production packaging after the hardening pass:
+  - `bash -n Scripts/release/notarize_app.sh Scripts/release/create_dist.sh Scripts/release/package_app.sh`
+  - `make dist`
 
 ## This Session — 2026-04-04
 - Implemented the THOR v0.2 foundation plan end-to-end:

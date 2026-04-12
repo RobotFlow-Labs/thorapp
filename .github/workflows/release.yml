@@ -13,6 +13,11 @@ jobs:
   package-release:
     name: Package Release Artifacts
     runs-on: macos-15
+    env:
+      APP_IDENTITY: ${{ secrets.APPLE_DEVELOPER_ID_APP }}
+      NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
+      NOTARY_ISSUER_ID: ${{ secrets.APPLE_NOTARY_ISSUER_ID }}
+      NOTARY_KEY_BASE64: ${{ secrets.APPLE_NOTARY_KEY_P8_BASE64 }}
     steps:
       - uses: actions/checkout@v4
 
@@ -26,7 +31,12 @@ jobs:
         run: swift package resolve
 
       - name: Build release artifacts
-        run: make dist
+        run: |
+          if [[ -n "${APP_IDENTITY}" && -n "${NOTARY_KEY_ID}" && -n "${NOTARY_ISSUER_ID}" && -n "${NOTARY_KEY_BASE64}" ]]; then
+            SIGNING_MODE=developer-id NOTARIZE_APP=1 ARCHES="arm64 x86_64" make dist
+          else
+            make dist
+          fi
 
       - name: Upload release artifacts
         uses: actions/upload-artifact@v4
