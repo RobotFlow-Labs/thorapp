@@ -57,6 +57,10 @@ Walk through:
 3. Network interface selection
 4. Hostname
 
+Before you continue, write down the username you created during OEM-config. The examples below use `<oem-config-username>` on purpose. Do not keep using `nvidia` unless you explicitly created that user on the device.
+
+Phase 2 is complete when you can log in with the new username and the board proceeds into the installed Jetson Linux system instead of returning to the installer.
+
 ## Phase 3 — First SSH over USB Tether
 
 Once Jetson Linux is up, the same USB-C cable exposes a USB-Ethernet gadget.
@@ -64,13 +68,21 @@ Once Jetson Linux is up, the same USB-C cable exposes a USB-Ethernet gadget.
 - Thor: `192.168.55.1`
 - Mac: `192.168.55.100` via a new `enX` interface
 
+Recommended shell variable:
+
+```bash
+export THOR_USER="<oem-config-username>"
+```
+
 First SSH:
 
 ```bash
-ssh <your-user>@192.168.55.1
+ssh "$THOR_USER"@192.168.55.1
 ```
 
 If the tether does not appear, verify the cable is still in Thor USB-C `5a` and that macOS brought up the gadget interface.
+
+Phase 3 is complete when `ssh "$THOR_USER"@192.168.55.1` opens a shell on the device without needing to discover any LAN IP.
 
 ## Phase 4 — Bootstrap SSH + Sudo
 
@@ -83,7 +95,7 @@ Scripts/jetson-thor/bootstrap_ssh.sh <user@host> [public-key-path]
 Example:
 
 ```bash
-Scripts/jetson-thor/bootstrap_ssh.sh nvidia@192.168.55.1 ~/.ssh/id_ed25519.pub
+Scripts/jetson-thor/bootstrap_ssh.sh "$THOR_USER"@192.168.55.1 ~/.ssh/id_ed25519.pub
 ```
 
 This will:
@@ -98,30 +110,36 @@ If THOR says no key was detected, generate one first:
 ssh-keygen -t ed25519 -f "$HOME/.ssh/id_ed25519" -C "thor-jetson"
 ```
 
+Phase 4 is complete when you can SSH back in with your key and `sudo -n true` succeeds on the device.
+
 ## Phase 5 — JetPack / Docker Readiness
 
 Install JetPack after the first SSH session:
 
 ```bash
-ssh <your-user>@192.168.55.1 'sudo apt update && sudo apt install -y nvidia-jetpack'
+ssh "$THOR_USER"@192.168.55.1 'sudo apt update && sudo apt install -y nvidia-jetpack'
 ```
 
 Then verify Docker/runtime readiness:
 
 ```bash
-ssh <your-user>@192.168.55.1 'docker --version && sudo systemctl status docker --no-pager'
+ssh "$THOR_USER"@192.168.55.1 'docker --version && sudo systemctl status docker --no-pager'
 ```
 
-After the THOR agent is installed, use THOR itself or `thorctl doctor` to verify:
+After the THOR agent is installed and reachable through THOR or a local SSH tunnel, use THOR itself or `thorctl doctor <local-agent-port>` to verify. Example if you forwarded the device agent locally to `8470`:
 
 ```bash
-thorctl doctor 8470
+thorctl doctor <local-agent-port>
+# Example if your local tunnel or THOR session exposes the agent on 8470:
+# thorctl doctor 8470
 ```
+
+Phase 5 is complete when JetPack is installed, Docker reports healthy, and THOR’s setup doctor reports the device as ready over the port you actually exposed for the agent.
 
 ## Related THOR Surfaces
 
 - `THOR.app` → onboarding and setup doctor now expose this same headless bring-up flow.
-- `thorctl quickstart [username]` prints the same Mac-side detection and first-boot commands. Replace `[username]` with the OEM-config username you actually created on the device.
+- `thorctl quickstart [username]` prints the same Mac-side detection and first-boot commands. Replace `[username]` with the OEM-config username you actually created on the device. The `nvidia` examples in older notes are placeholders, not a required default.
 - `thorctl quickstart` is a guided helper, not a flash utility; it assumes you already have the bootable USB installer and a physical Thor board.
 
 ## Troubleshooting

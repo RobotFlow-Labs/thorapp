@@ -23,9 +23,7 @@ wait_for_health() {
 
 case "$MODE" in
   unit)
-    swift test --filter "DatabaseTests|PipelineComposerTests|RegistryFeatureTests|JetsonThorQuickStartSupportTests|JetsonThorProductionReadinessTests"
-    swift test --filter versionSmoke
-    exec swift test --filter helpSmoke
+    exec swift test --filter "DatabaseTests|PipelineComposerTests|RegistryFeatureTests|JetsonThorQuickStartSupportTests|JetsonThorProductionReadinessTests|CLISmokeTests"
     ;;
   all)
     ;;

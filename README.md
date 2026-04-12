@@ -74,12 +74,13 @@ make run
 THOR now vendors the headless Jetson AGX Thor bring-up flow instead of leaving it in private local notes:
 
 ```bash
-thorctl quickstart nvidia
+export THOR_USER="<oem-config-username>"
+thorctl quickstart "$THOR_USER"
 Scripts/jetson-thor/thor_serial.sh uefi
-Scripts/jetson-thor/bootstrap_ssh.sh nvidia@192.168.55.1 ~/.ssh/id_ed25519.pub
+Scripts/jetson-thor/bootstrap_ssh.sh "$THOR_USER"@192.168.55.1 ~/.ssh/id_ed25519.pub
 ```
 
-Replace `nvidia` with the actual username you created during OEM-config.
+Do not assume `nvidia` unless you explicitly created that username during OEM-config.
 
 - Repo runbook: [docs/setup/jetson-agx-thor-headless-quickstart.md](docs/setup/jetson-agx-thor-headless-quickstart.md)
 - NVIDIA reference: [Jetson AGX Thor Quick Start](https://docs.nvidia.com/jetson/agx-thor-devkit/user-guide/latest/quick_start.html)
@@ -138,7 +139,7 @@ thorctl usb                 # USB devices
 thorctl exec "uname -a"     # Run any command
 thorctl watch               # Live metrics dashboard
 thorctl screenshot          # Capture screen for debugging
-thorctl quickstart nvidia   # Mac-side Thor headless first-boot guide
+thorctl quickstart <oem-config-username>   # Mac-side Thor headless first-boot guide
 ```
 
 Run `thorctl help` for the full list.

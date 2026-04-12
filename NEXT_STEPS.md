@@ -102,6 +102,17 @@
   - rerun `make test` once Docker Desktop is available on the host
   - rehearse the guided AGX Thor first-boot flow on physical hardware
   - run a real Developer ID + notarization tag release with Apple secrets
+- Added a fifth production-hardening pass focused on operator clarity and test-suite hygiene:
+  - split offline `thorctl` smoke coverage into `Tests/THORTests/CLISmokeTests.swift`, leaving `Tests/THORTests/CLITests.swift` as live-agent integration coverage only
+  - simplified `Scripts/dev/run_tests.sh unit` so the no-Docker release gate targets the dedicated `CLISmokeTests` suite instead of mixing in live-agent API tests
+  - removed the last always-true assertion warnings from the live CLI integration suite so local build/test output stays clean
+  - tightened the public AGX Thor bring-up docs in `README.md` and `docs/setup/jetson-agx-thor-headless-quickstart.md` with explicit OEM-config username substitution, per-phase success criteria, and a real-device-safe explanation of `thorctl doctor <local-agent-port>`
+- Revalidated this pass with:
+  - `make test-unit`
+- Remaining follow-up after this pass:
+  - rerun `make test` once Docker Desktop is available on the host
+  - rehearse the guided AGX Thor first-boot flow on physical hardware
+  - run a real Developer ID + notarization tag release with Apple secrets
 
 ## This Session — 2026-04-04
 - Implemented the THOR v0.2 foundation plan end-to-end:
