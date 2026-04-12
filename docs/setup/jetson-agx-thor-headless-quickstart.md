@@ -121,7 +121,8 @@ thorctl doctor 8470
 ## Related THOR Surfaces
 
 - `THOR.app` → onboarding and setup doctor now expose this same headless bring-up flow.
-- `thorctl quickstart [username]` prints the same Mac-side detection and first-boot commands.
+- `thorctl quickstart [username]` prints the same Mac-side detection and first-boot commands. Replace `[username]` with the OEM-config username you actually created on the device.
+- `thorctl quickstart` is a guided helper, not a flash utility; it assumes you already have the bootable USB installer and a physical Thor board.
 
 ## Troubleshooting
 
@@ -129,6 +130,7 @@ thorctl doctor 8470
 - If the OEM-config console does not appear, confirm the cable is on Thor USB-C `5a`, not the Debug-USB port.
 - If the bootstrap helper pauses at `sudo`, stay in the terminal. THOR opens the command with a TTY so the normal password prompt can work.
 - If the USB tether never appears, wait a few seconds after the CUI setup completes and check that macOS assigned a `192.168.55.x` address.
+- If you are validating THOR from source rather than bringing up hardware, use `make test-unit` for the fast local gate and `make test` when Docker Desktop is running.
 
 ## Official NVIDIA References
 

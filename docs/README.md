@@ -2,6 +2,11 @@
 
 This directory is organized so public readers can find the right material quickly.
 
+## Public Workflow
+
+- [README](../README.md) for install, update, and testing expectations.
+- [CONTRIBUTING](../CONTRIBUTING.md) for local development and PR checks.
+
 ## Setup
 
 - [Jetson AGX Thor headless quick start](setup/jetson-agx-thor-headless-quickstart.md)

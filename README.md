@@ -31,6 +31,7 @@ brew install thorapp
 ```
 
 This installs both the **THOR.app** GUI and the **thorctl** CLI.
+If you already installed through Homebrew, see the Update section below.
 
 ### From Source
 
@@ -38,15 +39,35 @@ This installs both the **THOR.app** GUI and the **thorctl** CLI.
 git clone https://github.com/RobotFlow-Labs/thorapp.git
 cd thorapp
 make build        # Build all targets
+make test-unit    # Fast local validation without Docker Desktop
 make install-cli  # Install thorctl to /usr/local/bin
 make run          # Package .app bundle and launch
+```
+
+### Update
+
+If you installed through Homebrew:
+
+```bash
+brew update
+brew upgrade thorapp
+```
+
+If you are tracking the source tree directly:
+
+```bash
+git pull --rebase
+make test-unit
+make run
 ```
 
 ### Requirements
 
 - macOS 14+ (Sonoma) on Apple Silicon
 - Swift 6.2+ (`xcode-select --install`)
-- Docker Desktop (for Jetson simulators — optional for real hardware)
+- Docker Desktop (required for `make test`, optional for real hardware)
+
+`make test-unit` is the fast non-Docker validation path. `make test` is the full simulator-backed suite and needs Docker Desktop running.
 
 ### Real AGX Thor First Boot
 
@@ -58,12 +79,15 @@ Scripts/jetson-thor/thor_serial.sh uefi
 Scripts/jetson-thor/bootstrap_ssh.sh nvidia@192.168.55.1 ~/.ssh/id_ed25519.pub
 ```
 
+Replace `nvidia` with the actual username you created during OEM-config.
+
 - Repo runbook: [docs/setup/jetson-agx-thor-headless-quickstart.md](docs/setup/jetson-agx-thor-headless-quickstart.md)
 - NVIDIA reference: [Jetson AGX Thor Quick Start](https://docs.nvidia.com/jetson/agx-thor-devkit/user-guide/latest/quick_start.html)
 
 ### Repository Guide
 
 - [docs/README.md](docs/README.md) indexes setup, product, and release documentation.
+- [CONTRIBUTING.md](CONTRIBUTING.md) explains the local test and PR checklist.
 - [Scripts/README.md](Scripts/README.md) explains the canonical script layout.
 - `make dist` produces release-ready app and CLI artifacts in `dist/`.
 - [SECURITY.md](SECURITY.md) documents supported versions and private vulnerability reporting.
@@ -287,20 +311,20 @@ On your real Jetson device:
 
 ```bash
 # Copy agent files
-scp -r Agent/ jetson@YOUR_JETSON:/opt/thor-agent/
+scp -r Agent/ <your-user>@YOUR_JETSON:/opt/thor-agent/
 
 # Install dependencies
-ssh jetson@YOUR_JETSON "pip3 install fastapi 'uvicorn[standard]' psutil pyyaml python-multipart"
+ssh <your-user>@YOUR_JETSON "pip3 install fastapi 'uvicorn[standard]' psutil pyyaml python-multipart"
 
 # Create systemd service
-ssh jetson@YOUR_JETSON "sudo tee /etc/systemd/system/thor-agent.service << EOF
+ssh <your-user>@YOUR_JETSON "sudo tee /etc/systemd/system/thor-agent.service << EOF
 [Unit]
 Description=THOR Jetson Agent
 After=network.target
 
 [Service]
 Type=simple
-User=jetson
+User=<your-user>
 ExecStart=/usr/bin/python3 /opt/thor-agent/main.py
 Restart=always
 Environment=THOR_AGENT_HOST=127.0.0.1
@@ -311,7 +335,7 @@ WantedBy=multi-user.target
 EOF"
 
 # Enable and start
-ssh jetson@YOUR_JETSON "sudo systemctl daemon-reload && sudo systemctl enable --now thor-agent"
+ssh <your-user>@YOUR_JETSON "sudo systemctl daemon-reload && sudo systemctl enable --now thor-agent"
 ```
 
 ---

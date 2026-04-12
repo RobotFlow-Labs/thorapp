@@ -6,15 +6,17 @@ This repo is set up so a public release can be produced from a clean checkout wi
 
 1. Update `version.env`.
 2. Update `CHANGELOG.md`.
-3. Run:
+3. Decide whether you are shipping the ad-hoc fallback path or a fully notarized build.
+4. Run:
 
 ```bash
 make test-unit
+make test
 make dist
 ```
 
-Run `make test` as well when Docker Desktop is available and you want the simulator-backed integration sweep.
-`make dist` now runs the release verifier, so the ad-hoc fallback path is checked before artifacts are published.
+Run `make test` when Docker Desktop is available and you want the simulator-backed integration sweep.
+`make dist` now runs the release verifier, so the ad-hoc fallback path is checked before artifacts are published. If Apple signing secrets are missing, the workflow intentionally falls back to the ad-hoc release path instead of failing late.
 
 Artifacts are written to `dist/`:
 
@@ -38,6 +40,18 @@ This repo includes `.github/workflows/release.yml`.
 - Pushing a tag like `v0.1.0` builds the release bundle and attaches the `dist/` artifacts to a GitHub release.
 - If Apple signing secrets are configured, the workflow builds a universal Developer ID signed app, notarizes it, staples it, and validates the stapled bundle before publishing.
 - If Apple signing secrets are missing, the workflow falls back to the ad-hoc signed release path instead of failing late.
+
+## Install And Update
+
+Public users should treat the tap as the primary install/update path:
+
+```bash
+brew tap RobotFlow-Labs/tap
+brew install thorapp
+brew upgrade thorapp
+```
+
+Source users can update by pulling the repo, rerunning the local test gates, and rebuilding the distributable artifacts.
 
 ## Notarization
 

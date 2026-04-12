@@ -8,7 +8,8 @@ Thank you for your interest in contributing to THOR! This project aims to be the
 git clone https://github.com/RobotFlow-Labs/thorapp.git
 cd thorapp
 make build
-make test
+make test-unit
+make test        # Requires Docker Desktop for the Jetson simulators
 make run          # Launch the app
 ```
 
@@ -16,7 +17,7 @@ make run          # Launch the app
 
 - **macOS 14+** (Sonoma) on Apple Silicon
 - **Swift 6.2+** — `xcode-select --install`
-- **Docker Desktop** — for Jetson simulators
+- **Docker Desktop** — required for the full simulator-backed test suite
 
 ## How to Contribute
 
@@ -40,10 +41,10 @@ Open an issue with the `enhancement` label describing:
 1. Fork the repo and create your branch from `main`
 2. Write code following existing patterns
 3. Add tests for new endpoints and features
-4. Ensure `make test` passes when Docker Desktop is running
-5. Ensure `make test-unit` passes for the non-Docker suite
+4. Ensure `make test-unit` passes
+5. Ensure `make test` passes when Docker Desktop is running
 6. Ensure `swift build` has 0 warnings
-7. Update the README if you add user-facing features
+7. Update the README and relevant docs if you change install, update, or release behavior
 8. Submit a PR with a clear description
 
 ### Repo Layout
@@ -82,6 +83,7 @@ make dist
 ```
 
 This produces app and CLI artifacts in `dist/`.
+If you are validating a release path locally, run `make test-unit` first and `make test` when Docker Desktop is available.
 
 ## License
 
