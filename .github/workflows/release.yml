@@ -37,6 +37,9 @@ jobs:
       - name: Run release smoke tests
         run: make test-unit
 
+      - name: Smoke local tap install
+        run: make tap-smoke
+
       - name: Build release artifacts
         run: |
           if [[ -n "${APP_IDENTITY}" && -n "${NOTARY_KEY_ID}" && -n "${NOTARY_ISSUER_ID}" && -n "${NOTARY_KEY_BASE64}" ]]; then

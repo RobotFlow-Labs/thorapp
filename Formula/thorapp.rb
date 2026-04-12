@@ -16,6 +16,14 @@ class Thorapp < Formula
            "--disable-sandbox",
            "--arch", "arm64"
 
+    package_script = if (buildpath/"Scripts/package_app.sh").exist?
+      "Scripts/package_app.sh"
+    elsif (buildpath/"Scripts/release/package_app.sh").exist?
+      "Scripts/release/package_app.sh"
+    else
+      odie "Missing package script"
+    end
+
     # Install CLI
     bin.install ".build/release/thorctl"
 
@@ -23,7 +31,15 @@ class Thorapp < Formula
     (libexec/"agent").install Dir["Agent/*"]
 
     # Build and install .app bundle
-    system "bash", "Scripts/release/package_app.sh", "release"
+    system(
+      {
+        "SWIFT_BUILD_DISABLE_SANDBOX" => "1",
+        "SKIP_SWIFT_BUILD" => "1",
+      },
+      "bash",
+      package_script,
+      "release"
+    )
     prefix.install "THORApp.app"
 
     (bin/"thorapp").write <<~EOS
@@ -62,6 +78,8 @@ class Thorapp < Formula
   test do
     assert_match "thorctl", shell_output("#{bin}/thorctl version")
     assert_predicate prefix/"THORApp.app/Contents/Info.plist", :exist?
+    assert_predicate prefix/"THORApp.app/Contents/MacOS/THORApp", :exist?
     assert_predicate bin/"thorapp", :exist?
+    assert_match "open -a \"#{prefix}/THORApp.app\"", (bin/"thorapp").read
   end
 end

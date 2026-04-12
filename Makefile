@@ -1,4 +1,4 @@
-.PHONY: build release test test-unit run package dist install-cli clean docker-up docker-down docker-logs lint icon help
+.PHONY: build release test test-unit run package dist tap-smoke install-cli clean docker-up docker-down docker-logs lint icon help
 
 # Default target
 help:
@@ -14,6 +14,7 @@ help:
 	@echo "  run         Build, package, and launch the app"
 	@echo "  package     Package .app bundle (release)"
 	@echo "  dist        Build release artifacts into dist/"
+	@echo "  tap-smoke   Install the formula from a temporary local tap"
 	@echo "  icon        Generate app icon from assets"
 	@echo "  clean       Remove build artifacts"
 	@echo ""
@@ -50,10 +51,13 @@ run: package
 	@open THORApp.app
 
 package:
-	SIGNING_MODE=adhoc Scripts/release/package_app.sh release
+	SIGNING_MODE=adhoc Scripts/package_app.sh release
 
 dist:
 	SIGNING_MODE=adhoc Scripts/release/create_dist.sh release
+
+tap-smoke:
+	Scripts/release/tap_smoke.sh
 
 icon:
 	Scripts/dev/generate_icon.sh

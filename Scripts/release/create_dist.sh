@@ -62,7 +62,12 @@ create_binary() {
 mkdir -p "$DIST_DIR"
 rm -f "$DIST_DIR"/THORApp-*.zip "$DIST_DIR"/thorctl-*.tar.gz "$DIST_DIR"/SHA256SUMS.txt
 
-SIGNING_MODE="${SIGNING_MODE:-adhoc}" "$ROOT/Scripts/release/package_app.sh" "$CONF"
+PACKAGE_SCRIPT="$ROOT/Scripts/package_app.sh"
+if [[ ! -f "$PACKAGE_SCRIPT" ]]; then
+  PACKAGE_SCRIPT="$ROOT/Scripts/release/package_app.sh"
+fi
+
+SIGNING_MODE="${SIGNING_MODE:-adhoc}" "$PACKAGE_SCRIPT" "$CONF"
 
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT

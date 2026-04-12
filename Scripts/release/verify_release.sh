@@ -23,6 +23,8 @@ APP_PATH="$(cd "$(dirname "$APP_PATH")" && pwd)/$(basename "$APP_PATH")"
 APP_ZIP="$(cd "$(dirname "$APP_ZIP")" && pwd)/$(basename "$APP_ZIP")"
 CLI_TAR="$(cd "$(dirname "$CLI_TAR")" && pwd)/$(basename "$CLI_TAR")"
 CHECKSUMS="$(cd "$(dirname "$CHECKSUMS")" && pwd)/$(basename "$CHECKSUMS")"
+TMP_DIR="$(mktemp -d)"
+trap 'rm -rf "$TMP_DIR"' EXIT
 
 if [[ ! -d "$APP_PATH" ]]; then
   echo "ERROR: App bundle not found: $APP_PATH" >&2
@@ -71,6 +73,25 @@ if [[ -n "${BUILD_NUMBER:-}" ]]; then
 fi
 
 codesign --verify --deep --strict --verbose=2 "$APP_PATH"
+
+CLI_SMOKE_DIR="$TMP_DIR/cli-smoke"
+mkdir -p "$CLI_SMOKE_DIR"
+tar -xzf "$CLI_TAR" -C "$CLI_SMOKE_DIR"
+CLI_BINARY="$CLI_SMOKE_DIR/thorctl"
+if [[ ! -x "$CLI_BINARY" ]]; then
+  echo "ERROR: CLI binary not found or not executable after extraction: $CLI_BINARY" >&2
+  exit 1
+fi
+
+if ! CLI_VERSION_OUTPUT=$("$CLI_BINARY" version 2>&1); then
+  echo "ERROR: thorctl version smoke failed: $CLI_VERSION_OUTPUT" >&2
+  exit 1
+fi
+
+if [[ -z "$CLI_VERSION_OUTPUT" ]]; then
+  echo "ERROR: thorctl version returned no output" >&2
+  exit 1
+fi
 
 if [[ "${NOTARIZE_APP:-0}" == "1" || "${SIGNING_MODE:-}" == "developer-id" ]]; then
   if command -v xcrun >/dev/null 2>&1; then
