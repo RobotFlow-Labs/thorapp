@@ -27,6 +27,10 @@ public struct AgentCapabilitiesResponse: Codable, Sendable {
     public let ros2Available: Bool
     public let gpu: GPUInfo
     public let disk: DiskInfo
+    public let detectedHardware: [String]?
+    public let installedFeatures: [String]?
+    public let supportedActions: [String]?
+    public let degradedStates: [String]?
 
     enum CodingKeys: String, CodingKey {
         case agentVersion = "agent_version"
@@ -35,6 +39,10 @@ public struct AgentCapabilitiesResponse: Codable, Sendable {
         case dockerVersion = "docker_version"
         case ros2Available = "ros2_available"
         case gpu, disk
+        case detectedHardware = "detected_hardware"
+        case installedFeatures = "installed_features"
+        case supportedActions = "supported_actions"
+        case degradedStates = "degraded_states"
     }
 }
 
@@ -411,6 +419,79 @@ public struct ROS2Service: Codable, Sendable, Identifiable {
     public var id: String { name }
     public let name: String
     public let type: String
+}
+
+public struct ROS2GraphResponse: Codable, Sendable {
+    public let graph: ROSGraphSnapshot
+    public let error: String?
+}
+
+public struct ROS2ParametersResponse: Codable, Sendable {
+    public let parameters: [ROSParameter]
+    public let count: Int
+    public let error: String?
+}
+
+public struct ROS2ParameterSetResponse: Codable, Sendable {
+    public let node: String
+    public let name: String
+    public let value: String
+    public let success: Bool
+    public let error: String?
+}
+
+public struct ROS2ActionsResponse: Codable, Sendable {
+    public let actions: [ROSActionDefinition]
+    public let count: Int
+    public let error: String?
+}
+
+public struct ROS2ActionSendGoalResponse: Codable, Sendable {
+    public let action: String
+    public let accepted: Bool
+    public let goalID: String?
+    public let message: String?
+    public let error: String?
+
+    enum CodingKeys: String, CodingKey {
+        case action, accepted, message, error
+        case goalID = "goal_id"
+    }
+}
+
+public struct ROSTopicStatsResponse: Codable, Sendable {
+    public let topics: [ROSTopicStats]
+    public let count: Int
+    public let error: String?
+}
+
+public struct StreamCatalogResponse: Codable, Sendable {
+    public let streams: [StreamSource]
+    public let count: Int
+}
+
+public struct StreamHealthResponse: Codable, Sendable {
+    public let health: StreamHealth
+}
+
+public struct LatestImageFrameResponse: Codable, Sendable {
+    public let metadata: ImageFrameMetadata
+}
+
+public struct LatestLaserScanResponse: Codable, Sendable {
+    public let scan: LaserScanFrame
+    public let metadata: StreamHealth?
+}
+
+public struct DiagnosticsArchiveResponse: Codable, Sendable {
+    public let archiveName: String
+    public let sections: [String]
+    public let summary: String
+
+    enum CodingKeys: String, CodingKey {
+        case archiveName = "archive_name"
+        case sections, summary
+    }
 }
 
 /// Agent /v1/system/reboot response.

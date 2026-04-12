@@ -5,6 +5,7 @@ import subprocess
 from datetime import datetime, timezone
 from fastapi import APIRouter, UploadFile, File
 from fastapi.responses import JSONResponse
+from mlx_backend import mlx_backend_status
 from process_manager import process_manager
 from sim import is_sim
 
@@ -16,6 +17,33 @@ MODELS_DIR = os.environ.get("THOR_MODELS_DIR", "/opt/models")
 @router.get("/gpu/info")
 async def gpu_info():
     """Get GPU and CUDA information."""
+    mlx_status = mlx_backend_status() if is_sim() else None
+    if mlx_status:
+        total_mb = mlx_status["memory_total_mb"]
+        used_mb = min(mlx_status["memory_used_mb"], total_mb) if total_mb else mlx_status["memory_used_mb"]
+        return {
+            "gpu_name": f"Apple Silicon Metal via {mlx_status['runtime_label']}",
+            "cuda_version": None,
+            "tensorrt_version": None,
+            "memory_total_mb": total_mb,
+            "memory_used_mb": used_mb,
+            "memory_free_mb": max(total_mb - used_mb, 0),
+            "utilization_percent": 0,
+            "temperature_c": 0,
+            "power_draw_w": 0,
+            "backend": "mlx",
+            "backend_source": "host_macos",
+            "backend_status": "connected",
+            "backend_endpoint": mlx_status["base_url"],
+            "metal_available": mlx_status["metal_available"],
+            "runtime_label": mlx_status["runtime_label"],
+            "loaded_models": mlx_status["loaded_models"],
+            "cached_models": mlx_status["cached_models"],
+            "chip": mlx_status["chip"],
+            "platform": mlx_status["platform"],
+            "mlx_backend": mlx_status["mlx_backend"],
+        }
+
     info = {
         "gpu_name": "N/A",
         "cuda_version": None,
@@ -144,6 +172,20 @@ async def tensorrt_convert(payload: dict):
 @router.get("/models/list")
 async def model_list():
     """List model files."""
+    mlx_status = mlx_backend_status() if is_sim() else None
+    if mlx_status:
+        models = []
+        for model in mlx_status["models"]:
+            model_id = model.get("id", "")
+            models.append({
+                "name": model_id.split("/")[-1] if model_id else "Unknown",
+                "path": model.get("local_path", model_id),
+                "format": "mlx",
+                "size_bytes": int(model.get("size_bytes") or 0),
+                "last_modified": model.get("pulled_at") or datetime.now(timezone.utc).isoformat(),
+            })
+        return {"models": models, "count": len(models)}
+
     models = []
     search_dirs = [MODELS_DIR, "/home/jetson/models"]
     extensions = (".onnx", ".trt", ".engine", ".plan", ".pt", ".pth", ".safetensors", ".bin")

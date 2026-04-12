@@ -34,8 +34,9 @@ import uvicorn
 # Add parent dir to path for imports
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from sim import sim_identity, get_distro
-from routers import power, system, storage, network, hardware, ros2, gpu, docker, logs, anima, registry
+from mlx_backend import mlx_backend_status
+from sim import sim_identity, get_distro, is_sim, active_camera_bridges
+from routers import power, system, storage, network, hardware, ros2, gpu, docker, logs, anima, registry, streams, diagnostics
 
 AGENT_VERSION = "0.1.0"
 
@@ -53,6 +54,8 @@ app.include_router(docker.router)
 app.include_router(registry.router)
 app.include_router(logs.router)
 app.include_router(anima.router)
+app.include_router(streams.router)
+app.include_router(diagnostics.router)
 
 
 # ── Core Endpoints ─────────────────────────────────────────────────────
@@ -74,6 +77,15 @@ async def capabilities():
     identity = sim_identity()
     disk = shutil.disk_usage("/")
     mem = psutil.virtual_memory()
+    docker_version = _detect_docker()
+    ros2_available = _detect_ros2()
+    degraded_states = []
+    if not docker_version:
+        degraded_states.append("docker_missing")
+    if not ros2_available:
+        degraded_states.append("ros2_missing")
+    if is_sim() and not active_camera_bridges(max_age_seconds=30):
+        degraded_states.append("no_bridged_camera")
 
     return {
         "agent_version": AGENT_VERSION,
@@ -91,13 +103,17 @@ async def capabilities():
             "distro": get_distro(),
         },
         "jetpack_version": os.environ.get("THOR_SIM_JETPACK", identity.get("jetpack")),
-        "docker_version": _detect_docker(),
-        "ros2_available": _detect_ros2(),
+        "docker_version": docker_version,
+        "ros2_available": ros2_available,
         "gpu": _detect_gpu(),
         "disk": {
             "total_gb": round(disk.total / (1024**3), 1),
             "free_gb": round(disk.free / (1024**3), 1),
         },
+        "detected_hardware": _detected_hardware(),
+        "installed_features": _installed_features(docker_version, ros2_available),
+        "supported_actions": _supported_actions(),
+        "degraded_states": degraded_states,
     }
 
 
@@ -266,6 +282,9 @@ def _detect_docker():
 
 
 def _detect_ros2():
+    if is_sim():
+        return True
+
     try:
         result = subprocess.run(["ros2", "--version"], capture_output=True, text=True, timeout=5)
         return result.returncode == 0
@@ -274,6 +293,15 @@ def _detect_ros2():
 
 
 def _detect_gpu():
+    mlx_status = mlx_backend_status() if is_sim() else None
+    if mlx_status:
+        return {
+            "name": f"Apple Silicon Metal via {mlx_status['runtime_label']}",
+            "memory_total_mb": mlx_status["memory_total_mb"],
+            "memory_used_mb": mlx_status["memory_used_mb"],
+            "temperature_c": 0,
+        }
+
     try:
         result = subprocess.run(
             ["nvidia-smi", "--query-gpu=name,memory.total,memory.used,temperature.gpu", "--format=csv,noheader,nounits"],
@@ -292,10 +320,43 @@ def _detect_gpu():
     return {"name": "N/A (simulated)", "memory_total_mb": 0, "memory_used_mb": 0, "temperature_c": 0}
 
 
+def _detected_hardware():
+    hardware = ["jetson", "gpu"]
+    if is_sim():
+        hardware.extend(["camera", "imu", "lidar"])
+    if active_camera_bridges(max_age_seconds=30):
+        hardware.append("bridged_camera")
+    return hardware
+
+
+def _installed_features(docker_version, ros2_available):
+    features = ["ssh", "diagnostics"]
+    if docker_version:
+        features.append("docker")
+    if ros2_available or is_sim():
+        features.extend(["ros2", "bags", "launches"])
+    features.extend(["streams", "recipes"])
+    return features
+
+
+def _supported_actions():
+    return [
+        "connect",
+        "doctor",
+        "stream.image",
+        "stream.scan",
+        "ros2.graph",
+        "ros2.parameters",
+        "ros2.actions",
+        "recipe.run",
+        "diagnostics.collect",
+    ]
+
+
 if __name__ == "__main__":
     host = os.environ.get("THOR_AGENT_HOST", "127.0.0.1")
     port = int(os.environ.get("THOR_AGENT_PORT", "8470"))
     print(f"[THOR Agent] Starting on {host}:{port}")
     print(f"[THOR Agent] Version: {AGENT_VERSION}")
-    print(f"[THOR Agent] Routers: power, system, storage, network, hardware, ros2, gpu, docker, logs, anima")
+    print(f"[THOR Agent] Routers: power, system, storage, network, hardware, ros2, gpu, docker, registry, logs, anima, streams, diagnostics")
     uvicorn.run(app, host=host, port=port, log_level="info")

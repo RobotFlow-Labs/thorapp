@@ -37,15 +37,28 @@ struct GPUView: View {
                 VStack(spacing: 0) {
                     infoRow("GPU", g.gpuName)
                     Divider().padding(.leading, 16)
-                    infoRow("CUDA", g.cudaVersion ?? "N/A")
-                    Divider().padding(.leading, 16)
-                    infoRow("TensorRT", g.tensorrtVersion ?? "N/A")
-                    Divider().padding(.leading, 16)
-                    infoRow("Temperature", "\(Int(g.temperatureC))°C")
-                    Divider().padding(.leading, 16)
-                    infoRow("Power", "\(String(format: "%.1f", g.powerDrawW)) W")
-                    Divider().padding(.leading, 16)
-                    infoRow("Utilization", "\(Int(g.utilizationPercent))%")
+                    infoRow("Backend", backendDisplayName(for: g))
+                    if g.backend == "mlx" {
+                        Divider().padding(.leading, 16)
+                        infoRow("Metal", g.metalAvailable == true ? "Available" : "Unavailable")
+                        Divider().padding(.leading, 16)
+                        infoRow("Runtime", g.mlxBackend ?? g.runtimeLabel ?? "MLX")
+                        Divider().padding(.leading, 16)
+                        infoRow("Cached Models", "\(g.cachedModels ?? 0)")
+                        Divider().padding(.leading, 16)
+                        infoRow("Loaded Models", "\(g.loadedModels ?? 0)")
+                    } else {
+                        Divider().padding(.leading, 16)
+                        infoRow("CUDA", g.cudaVersion ?? "N/A")
+                        Divider().padding(.leading, 16)
+                        infoRow("TensorRT", g.tensorrtVersion ?? "N/A")
+                        Divider().padding(.leading, 16)
+                        infoRow("Temperature", "\(Int(g.temperatureC))°C")
+                        Divider().padding(.leading, 16)
+                        infoRow("Power", "\(String(format: "%.1f", g.powerDrawW)) W")
+                        Divider().padding(.leading, 16)
+                        infoRow("Utilization", "\(Int(g.utilizationPercent))%")
+                    }
                 }
             }
         }
@@ -77,7 +90,12 @@ struct GPUView: View {
 
     private var trtEnginesCard: some View {
         GroupBox("TensorRT Engines (\(engines?.count ?? 0))") {
-            if let eng = engines, !eng.engines.isEmpty {
+            if gpuInfo?.backend == "mlx" {
+                Text("TensorRT is not used when THOR is connected to docker_mlx_cpp on the host Mac.")
+                    .foregroundStyle(.secondary)
+                    .font(.system(size: 13))
+                    .padding(8)
+            } else if let eng = engines, !eng.engines.isEmpty {
                 VStack(spacing: 0) {
                     ForEach(eng.engines) { engine in
                         HStack {
@@ -130,8 +148,28 @@ struct GPUView: View {
         Text(format.uppercased())
             .font(.system(size: 9, weight: .bold, design: .monospaced))
             .padding(.horizontal, 4).padding(.vertical, 1)
-            .background(format == "trt" ? Color.orange.opacity(0.2) : format == "onnx" ? Color.blue.opacity(0.2) : Color.green.opacity(0.2))
+            .background(formatColor(for: format))
             .clipShape(.rect(cornerRadius: 3))
+    }
+
+    private func backendDisplayName(for info: GPUDetailResponse) -> String {
+        if info.backend == "mlx" {
+            return "MLX / Metal"
+        }
+        return "Jetson CUDA"
+    }
+
+    private func formatColor(for format: String) -> Color {
+        switch format.lowercased() {
+        case "trt":
+            return Color.orange.opacity(0.2)
+        case "onnx":
+            return Color.blue.opacity(0.2)
+        case "mlx":
+            return Color.teal.opacity(0.2)
+        default:
+            return Color.green.opacity(0.2)
+        }
     }
 
     private func formatBytes(_ bytes: Int) -> String {

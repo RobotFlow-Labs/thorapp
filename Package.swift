@@ -36,9 +36,7 @@ let package = Package(
             name: "THORApp",
             dependencies: ["THORShared"],
             path: "Sources/THORApp",
-            resources: [
-                .process("Resources"),
-            ]
+            exclude: ["Resources"]
         ),
 
         // CLI tool for managing THOR devices from terminal

@@ -234,6 +234,34 @@ public struct CameraDevice: Codable, Sendable, Identifiable {
     public let device: String
     public let type: String
     public let details: String?
+    public let source: String?
+    public let bridgeState: String?
+    public let previewPath: String?
+    public let width: Int?
+    public let height: Int?
+    public let fps: Double?
+    public let lastFrameAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case name, device, type, details, source, width, height, fps
+        case bridgeState = "bridge_state"
+        case previewPath = "preview_path"
+        case lastFrameAt = "last_frame_at"
+    }
+}
+
+public struct CameraBridgeFrameResponse: Codable, Sendable {
+    public let status: String
+    public let cameraID: String
+    public let bridgeState: String
+    public let previewPath: String?
+
+    enum CodingKeys: String, CodingKey {
+        case status
+        case cameraID = "camera_id"
+        case bridgeState = "bridge_state"
+        case previewPath = "preview_path"
+    }
 }
 
 public struct GPIOResponse: Codable, Sendable {
@@ -304,6 +332,17 @@ public struct GPUDetailResponse: Codable, Sendable {
     public let utilizationPercent: Double
     public let temperatureC: Double
     public let powerDrawW: Double
+    public let backend: String?
+    public let backendSource: String?
+    public let backendStatus: String?
+    public let backendEndpoint: String?
+    public let metalAvailable: Bool?
+    public let runtimeLabel: String?
+    public let loadedModels: Int?
+    public let cachedModels: Int?
+    public let chip: String?
+    public let platform: String?
+    public let mlxBackend: String?
 
     enum CodingKeys: String, CodingKey {
         case gpuName = "gpu_name"
@@ -315,6 +354,16 @@ public struct GPUDetailResponse: Codable, Sendable {
         case utilizationPercent = "utilization_percent"
         case temperatureC = "temperature_c"
         case powerDrawW = "power_draw_w"
+        case backend
+        case backendSource = "backend_source"
+        case backendStatus = "backend_status"
+        case backendEndpoint = "backend_endpoint"
+        case metalAvailable = "metal_available"
+        case runtimeLabel = "runtime_label"
+        case loadedModels = "loaded_models"
+        case cachedModels = "cached_models"
+        case chip, platform
+        case mlxBackend = "mlx_backend"
     }
 }
 

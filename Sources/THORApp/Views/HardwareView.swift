@@ -17,6 +17,10 @@ struct HardwareView: View {
                 Label("Hardware & Peripherals", systemImage: "cpu")
                     .font(.system(size: 14, weight: .medium))
                 Spacer()
+                Button("Camera Studio") {
+                    appState.openCameraStudio(for: deviceID)
+                }
+                .buttonStyle(.bordered)
                 Button { Task { await loadAll() } } label: { Image(systemName: "arrow.clockwise") }
                     .buttonStyle(.borderless)
             }
@@ -37,23 +41,47 @@ struct HardwareView: View {
     private var camerasCard: some View {
         GroupBox("Cameras (\(cameras?.count ?? 0))") {
             if let cams = cameras, !cams.cameras.isEmpty {
-                VStack(spacing: 0) {
+                VStack(alignment: .leading, spacing: 10) {
                     ForEach(cams.cameras) { cam in
-                        HStack(spacing: 8) {
-                            Image(systemName: cam.type == "ZED" ? "video.fill" : cam.type == "CSI" ? "camera.fill" : "web.camera")
-                                .foregroundStyle(cam.type == "ZED" ? .purple : cam.type == "CSI" ? .blue : .green)
-                                .frame(width: 16)
-                            VStack(alignment: .leading, spacing: 1) {
-                                Text(cam.name).font(.system(size: 12, weight: .medium))
-                                Text(cam.device).font(.system(size: 10, design: .monospaced)).foregroundStyle(.secondary)
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack(alignment: .top, spacing: 8) {
+                                Image(systemName: cam.type == "ZED" ? "video.fill" : cam.type == "CSI" ? "camera.fill" : "web.camera")
+                                    .foregroundStyle(cam.type == "ZED" ? .purple : cam.type == "CSI" ? .blue : .green)
+                                    .frame(width: 16)
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(cam.name).font(.system(size: 12, weight: .medium))
+                                    Text(cam.device)
+                                        .font(.system(size: 10, design: .monospaced))
+                                        .foregroundStyle(.secondary)
+                                    if let details = cam.details, !details.isEmpty {
+                                        Text(details)
+                                            .font(.system(size: 10))
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+                                Spacer()
+                                HStack(spacing: 6) {
+                                    cameraBadge(cam.type, color: badgeColor(for: cam.type))
+                                    if cam.isBridged {
+                                        cameraBadge(cam.source?.uppercased() ?? "BRIDGE", color: .orange)
+                                    }
+                                    if let bridgeState = cam.bridgeState {
+                                        cameraBadge(bridgeState.uppercased(), color: .pink)
+                                    }
+                                    if let width = cam.width, let height = cam.height {
+                                        cameraBadge("\(width)×\(height)", color: .secondary)
+                                    }
+                                }
                             }
-                            Spacer()
-                            Text(cam.type).font(.system(size: 10, weight: .semibold))
-                                .padding(.horizontal, 6).padding(.vertical, 2)
-                                .background(cam.type == "CSI" ? Color.blue.opacity(0.15) : cam.type == "ZED" ? Color.purple.opacity(0.15) : Color.green.opacity(0.15))
-                                .clipShape(.rect(cornerRadius: 4))
+
+                            if cam.isBridged {
+                                BridgedCameraSnapshotView(deviceID: deviceID, camera: cam)
+                            }
                         }
-                        .padding(.horizontal, 12).padding(.vertical, 6)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(Color(.secondarySystemFill).opacity(0.25))
+                        .clipShape(.rect(cornerRadius: 10))
                     }
                 }
             } else {
@@ -169,5 +197,102 @@ struct HardwareView: View {
             (cameras, gpioState, i2cState, usbState, serialState) = try await (c, g, i, u, s)
         } catch {}
         isLoading = false
+    }
+
+    private func badgeColor(for cameraType: String) -> Color {
+        switch cameraType {
+        case "CSI":
+            .blue
+        case "ZED":
+            .purple
+        case "USB":
+            .green
+        default:
+            .secondary
+        }
+    }
+
+    private func cameraBadge(_ label: String, color: Color) -> some View {
+        Text(label)
+            .font(.system(size: 10, weight: .semibold))
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(color.opacity(0.15))
+            .clipShape(.rect(cornerRadius: 4))
+    }
+}
+
+private struct BridgedCameraSnapshotView: View {
+    let deviceID: Int64
+    let camera: CameraDevice
+
+    @Environment(AppState.self) private var appState
+    @State private var image: NSImage?
+    @State private var snapshotUnavailable = false
+
+    var body: some View {
+        Group {
+            if let image {
+                Image(nsImage: image)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(maxWidth: .infinity, minHeight: 150, maxHeight: 180)
+                    .background(Color.black.opacity(0.85))
+                    .clipShape(.rect(cornerRadius: 8))
+            } else {
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color(.secondarySystemFill))
+                    .frame(maxWidth: .infinity, minHeight: 150, maxHeight: 180)
+                    .overlay {
+                        VStack(spacing: 6) {
+                            Image(systemName: snapshotUnavailable ? "wifi.exclamationmark" : "photo.badge.arrow.down")
+                                .font(.system(size: 20))
+                                .foregroundStyle(.secondary)
+                            Text(snapshotUnavailable ? "Waiting for live snapshot" : "Loading bridged snapshot")
+                                .font(.system(size: 11, weight: .medium))
+                            if let lastFrameAt = camera.lastFrameAt {
+                                Text(lastFrameAt)
+                                    .font(.system(size: 10, design: .monospaced))
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+            }
+        }
+        .task(id: "\(deviceID)-\(camera.device)") {
+            await pollSnapshot()
+        }
+    }
+
+    private func pollSnapshot() async {
+        guard camera.isBridged,
+              let client = appState.connector?.agentClient(for: deviceID) else {
+            return
+        }
+
+        while !Task.isCancelled {
+            do {
+                let data = try await client.cameraSnapshot(cameraID: camera.rawCameraID)
+                image = NSImage(data: data)
+                snapshotUnavailable = image == nil
+            } catch {
+                snapshotUnavailable = true
+            }
+
+            try? await Task.sleep(for: .milliseconds(900))
+        }
+    }
+}
+
+private extension CameraDevice {
+    var isBridged: Bool {
+        source == "bridge" || device.hasPrefix("bridge:")
+    }
+
+    var rawCameraID: String {
+        if device.hasPrefix("bridge:") {
+            return String(device.dropFirst("bridge:".count))
+        }
+        return device
     }
 }

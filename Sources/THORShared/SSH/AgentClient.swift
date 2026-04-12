@@ -94,6 +94,34 @@ public struct AgentClient: Sendable {
         try await get("/v1/ros2/services")
     }
 
+    public func ros2Graph() async throws -> ROS2GraphResponse {
+        try await get("/v1/ros2/graph")
+    }
+
+    public func ros2Parameters(node: String? = nil) async throws -> ROS2ParametersResponse {
+        if let node, !node.isEmpty {
+            let encoded = node.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? node
+            return try await get("/v1/ros2/parameters?node=\(encoded)")
+        }
+        return try await get("/v1/ros2/parameters")
+    }
+
+    public func ros2SetParameter(node: String, name: String, value: String) async throws -> ROS2ParameterSetResponse {
+        try await post("/v1/ros2/parameters/set", body: ["node": node, "name": name, "value": value])
+    }
+
+    public func ros2Actions() async throws -> ROS2ActionsResponse {
+        try await get("/v1/ros2/actions")
+    }
+
+    public func ros2SendGoal(action: String, goal: String) async throws -> ROS2ActionSendGoalResponse {
+        try await post("/v1/ros2/action/send_goal", body: ["action": action, "goal": goal])
+    }
+
+    public func ros2TopicStats() async throws -> ROSTopicStatsResponse {
+        try await get("/v1/ros2/topic-stats")
+    }
+
     // MARK: - Power
 
     public func powerMode() async throws -> PowerModeResponse {
@@ -176,6 +204,56 @@ public struct AgentClient: Sendable {
         try await get("/v1/hardware/cameras")
     }
 
+    public func cameraBridgeFrame(
+        cameraID: String,
+        name: String,
+        type: String,
+        width: Int,
+        height: Int,
+        fps: Double?,
+        jpegData: Data
+    ) async throws -> CameraBridgeFrameResponse {
+        try await post("/v1/hardware/camera-bridge/frame", body: [
+            "camera_id": cameraID,
+            "name": name,
+            "type": type,
+            "width": width,
+            "height": height,
+            "fps": fps as Any,
+            "jpeg_base64": jpegData.base64EncodedString(),
+            "captured_at": ISO8601DateFormatter().string(from: Date()),
+        ])
+    }
+
+    public func removeCameraBridge(cameraID: String) async throws -> CameraBridgeFrameResponse {
+        let encoded = cameraID.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? cameraID
+        return try await delete("/v1/hardware/camera-bridge/\(encoded)")
+    }
+
+    public func cameraSnapshot(cameraID: String) async throws -> Data {
+        let encoded = cameraID.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? cameraID
+        return try await data("/v1/hardware/cameras/\(encoded)/snapshot")
+    }
+
+    public func streamCatalog() async throws -> StreamCatalogResponse {
+        try await get("/v1/streams/catalog")
+    }
+
+    public func streamHealth(sourceID: String) async throws -> StreamHealthResponse {
+        let encoded = sourceID.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? sourceID
+        return try await get("/v1/streams/health/\(encoded)")
+    }
+
+    public func latestStreamImage(sourceID: String) async throws -> Data {
+        let encoded = sourceID.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? sourceID
+        return try await data("/v1/streams/image/\(encoded)/latest.jpg")
+    }
+
+    public func latestLaserScan(sourceID: String) async throws -> LatestLaserScanResponse {
+        let encoded = sourceID.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? sourceID
+        return try await get("/v1/streams/scan/\(encoded)/latest")
+    }
+
     public func gpio() async throws -> GPIOResponse {
         try await get("/v1/hardware/gpio")
     }
@@ -255,8 +333,18 @@ public struct AgentClient: Sendable {
 
     // MARK: - ROS2 Extended
 
-    public func ros2Launch(package: String, launchFile: String) async throws -> ROS2LaunchResponse {
-        try await post("/v1/ros2/launch", body: ["package": package, "launch_file": launchFile])
+    public func ros2Launch(
+        package: String,
+        launchFile: String,
+        arguments: [String] = [],
+        environment: [String: String] = [:]
+    ) async throws -> ROS2LaunchResponse {
+        try await post("/v1/ros2/launch", body: [
+            "package": package,
+            "launch_file": launchFile,
+            "arguments": arguments,
+            "environment": environment,
+        ])
     }
 
     public func ros2LaunchStop(pid: Int) async throws -> ROS2LaunchResponse {
@@ -287,6 +375,10 @@ public struct AgentClient: Sendable {
         try await post("/v1/ros2/bag/stop", body: ["pid": pid])
     }
 
+    public func diagnosticsArchive(sectionSelection: [String] = []) async throws -> Data {
+        try await postData("/v1/diagnostics/archive", body: ["sections": sectionSelection])
+    }
+
     // MARK: - HTTP Helpers
 
     private func get<T: Decodable>(_ path: String) async throws -> T {
@@ -310,6 +402,25 @@ public struct AgentClient: Sendable {
         return try decoder.decode(T.self, from: data)
     }
 
+    private func data(_ path: String) async throws -> Data {
+        let url = URL(string: baseURL.absoluteString + path)!
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.timeoutInterval = 10
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let http = response as? HTTPURLResponse else {
+            throw AgentClientError.invalidResponse
+        }
+        guard (200...299).contains(http.statusCode) else {
+            let body = String(data: data, encoding: .utf8) ?? ""
+            throw AgentClientError.httpError(statusCode: http.statusCode, body: body)
+        }
+
+        return data
+    }
+
     private func post<T: Decodable>(_ path: String, body: [String: Any]) async throws -> T {
         let url = URL(string: baseURL.absoluteString + path)!
         var request = URLRequest(url: url)
@@ -317,6 +428,47 @@ public struct AgentClient: Sendable {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.timeoutInterval = 60
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let http = response as? HTTPURLResponse else {
+            throw AgentClientError.invalidResponse
+        }
+        guard (200...299).contains(http.statusCode) else {
+            let body = String(data: data, encoding: .utf8) ?? ""
+            throw AgentClientError.httpError(statusCode: http.statusCode, body: body)
+        }
+
+        let decoder = JSONDecoder()
+        return try decoder.decode(T.self, from: data)
+    }
+
+    private func postData(_ path: String, body: [String: Any]) async throws -> Data {
+        let url = URL(string: baseURL.absoluteString + path)!
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 120
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let http = response as? HTTPURLResponse else {
+            throw AgentClientError.invalidResponse
+        }
+        guard (200...299).contains(http.statusCode) else {
+            let body = String(data: data, encoding: .utf8) ?? ""
+            throw AgentClientError.httpError(statusCode: http.statusCode, body: body)
+        }
+
+        return data
+    }
+
+    private func delete<T: Decodable>(_ path: String) async throws -> T {
+        let url = URL(string: baseURL.absoluteString + path)!
+        var request = URLRequest(url: url)
+        request.httpMethod = "DELETE"
+        request.timeoutInterval = 10
 
         let (data, response) = try await URLSession.shared.data(for: request)
 

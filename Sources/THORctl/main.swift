@@ -12,6 +12,14 @@ func run() async {
     switch command {
     case "devices", "ls":
         await listDevices()
+    case "discover":
+        await discoverDevices()
+    case "quickstart":
+        let username = args.count > 2 ? args[2] : "nvidia"
+        quickStart(username: username)
+    case "doctor":
+        let port = args.count > 2 ? Int(args[2]) ?? 8470 : 8470
+        await connectionDoctor(port: port)
     case "registries":
         await listRegistries()
     case "connect":
@@ -73,6 +81,50 @@ func run() async {
     case "ros2-topics":
         let port = args.count > 2 ? Int(args[2]) ?? 8470 : 8470
         await ros2Topics(port: port)
+    case "ros2":
+        let subcommand = args.count > 2 ? args[2] : "help"
+        switch subcommand {
+        case "graph":
+            let port = args.count > 3 ? Int(args[3]) ?? 8470 : 8470
+            await ros2GraphCmd(port: port)
+        case "params":
+            let port = args.count > 3 ? Int(args[3]) ?? 8470 : 8470
+            let node = args.count > 4 ? args[4] : ""
+            await ros2ParamsCmd(port: port, node: node)
+        case "actions":
+            let port = args.count > 3 ? Int(args[3]) ?? 8470 : 8470
+            await ros2ActionsCmd(port: port)
+        default:
+            print("Usage: thorctl ros2 <graph|params|actions> [port] [node]")
+        }
+    case "streams":
+        let port = args.count > 2 ? Int(args[2]) ?? 8470 : 8470
+        await streamsCmd(port: port)
+    case "stream-stats":
+        let port = args.count > 2 ? Int(args[2]) ?? 8470 : 8470
+        let sourceID = args.count > 3 ? args[3] : nil
+        await streamStatsCmd(port: port, sourceID: sourceID)
+    case "recipe":
+        let subcommand = args.count > 2 ? args[2] : "help"
+        switch subcommand {
+        case "run":
+            let port = args.count > 3 ? Int(args[3]) ?? 8470 : 8470
+            let identifier = args.count > 4 ? args[4] : ""
+            let overrides = args.count > 5 ? Array(args[5...]) : []
+            await recipeRunCmd(port: port, identifier: identifier, overrides: overrides)
+        default:
+            print("Usage: thorctl recipe run <port> <recipe-id|name> [KEY=VALUE ...]")
+        }
+    case "diagnostics":
+        let subcommand = args.count > 2 ? args[2] : "help"
+        switch subcommand {
+        case "collect":
+            let port = args.count > 3 ? Int(args[3]) ?? 8470 : 8470
+            let output = args.count > 4 ? args[4] : "thor-diagnostics-\(Int(Date().timeIntervalSince1970)).zip"
+            await diagnosticsCollectCmd(port: port, outputPath: output)
+        default:
+            print("Usage: thorctl diagnostics collect <port> [output.zip]")
+        }
     case "power", "power-mode":
         let port = args.count > 2 ? Int(args[2]) ?? 8470 : 8470
         await powerInfo(port: port)
@@ -85,6 +137,11 @@ func run() async {
     case "cameras":
         let port = args.count > 2 ? Int(args[2]) ?? 8470 : 8470
         await camerasCmd(port: port)
+    case "camera-snapshot":
+        let port = args.count > 2 ? Int(args[2]) ?? 8470 : 8470
+        let cameraID = args.count > 3 ? args[3] : ""
+        let outputPath = args.count > 4 ? args[4] : "thor-camera-snapshot.jpg"
+        await cameraSnapshotCmd(port: port, cameraID: cameraID, outputPath: outputPath)
     case "gpu":
         let port = args.count > 2 ? Int(args[2]) ?? 8470 : 8470
         await gpuCmd(port: port)
@@ -117,6 +174,16 @@ func run() async {
 
 // MARK: - Commands
 
+private func padded(_ value: String, width: Int) -> String {
+    let truncated = value.count > width ? String(value.prefix(width)) : value
+    let padding = max(width - truncated.count, 0)
+    return truncated + String(repeating: " ", count: padding)
+}
+
+private func tableRow(_ columns: [(String, Int)]) -> String {
+    columns.map { padded($0.0, width: $0.1) }.joined(separator: " ")
+}
+
 func listDevices() async {
     do {
         let db = try DatabaseManager(path: DatabaseManager.defaultPath)
@@ -127,19 +194,123 @@ func listDevices() async {
             print("No devices registered. Add one via the THOR app or 'thorctl connect <host> <port>'.")
             return
         }
-        print(String(format: "%-4s %-20s %-25s %-15s %-8s", "ID", "Name", "Hostname", "IP", "Env"))
+        print(tableRow([("ID", 4), ("Name", 20), ("Hostname", 25), ("IP", 15), ("Env", 8)]))
         print(String(repeating: "-", count: 75))
         for device in devices {
-            print(String(format: "%-4d %-20s %-25s %-15s %-8s",
-                         device.id ?? 0,
-                         String(device.displayName.prefix(20)),
-                         String(device.hostname.prefix(25)),
-                         String((device.lastKnownIP ?? "—").prefix(15)),
-                         device.environment.rawValue))
+            print(tableRow([
+                ("\(device.id ?? 0)", 4),
+                (device.displayName, 20),
+                (device.hostname, 25),
+                (device.lastKnownIP ?? "—", 15),
+                (device.environment.rawValue, 8),
+            ]))
         }
     } catch {
         print("Error: \(error.localizedDescription)")
     }
+}
+
+func discoverDevices() async {
+    print("Discovering THOR-ready devices...")
+    print(String(repeating: "-", count: 72))
+
+    await listDevices()
+    print("")
+    print("Simulator probe:")
+
+    for port in [8470, 8471] {
+        let client = AgentClient(port: port)
+        do {
+            let health = try await client.health()
+            let capabilities = try await client.capabilities()
+            print("  [FOUND] localhost:\(port) — \(capabilities.hardware.model) — agent \(health.agentVersion)")
+        } catch {
+            print("  [MISS ] localhost:\(port) — \(error.localizedDescription)")
+        }
+    }
+}
+
+func connectionDoctor(port: Int) async {
+    let client = AgentClient(port: port)
+    print("THOR Connection Doctor — port \(port)")
+    print(String(repeating: "-", count: 60))
+
+    do {
+        let health = try await client.health()
+        let capabilities = try await client.capabilities()
+        let dockerReady = capabilities.dockerVersion != nil
+        let rosReady = capabilities.ros2Available
+
+        print("[PASS] Reachability: Agent reachable")
+        print("[PASS] Health: \(health.status) (agent v\(health.agentVersion))")
+        print("[INFO] JetPack: \(capabilities.jetpackVersion ?? "unknown")")
+        print("[\(dockerReady ? "PASS" : "WARN")] Docker: \(capabilities.dockerVersion ?? "not detected")")
+        print("[\(rosReady ? "PASS" : "WARN")] ROS2: \(rosReady ? "available" : "missing")")
+        print("[INFO] GPU: \(capabilities.gpu.name)")
+        print("[INFO] Disk Free: \(capabilities.disk.freeGb ?? 0) GB")
+    } catch {
+        let message = error.localizedDescription.lowercased()
+        if message.contains("refused") || message.contains("timed out") || message.contains("could not connect") {
+            print("[FAIL] Reachability: host unreachable or agent port closed")
+            print("Next action: verify THOR agent is running and the tunnel/port is reachable.")
+        } else if message.contains("401") || message.contains("403") {
+            print("[FAIL] Authentication: access denied")
+            print("Next action: refresh SSH credentials or agent trust state.")
+        } else {
+            print("[FAIL] Unknown: \(error.localizedDescription)")
+            print("Next action: collect diagnostics and inspect raw agent logs.")
+        }
+    }
+}
+
+func quickStart(username: String) {
+    let support = JetsonThorQuickStartSupport()
+    let snapshot = support.snapshot()
+
+    print("Jetson AGX Thor headless quick start")
+    print(String(repeating: "-", count: 72))
+    print("User: \(username)")
+    print("")
+
+    if let debugTTY = snapshot.debugSerialCandidates.first(where: { $0.recommended })?.path {
+        print("[debug-usb]  \(debugTTY)")
+        print("  UEFI console:  \(JetsonThorQuickStartSupport.uefiConsoleCommand(serialPath: debugTTY))")
+    } else {
+        print("[debug-usb]  not detected")
+        print("  fix: connect the Mac to Thor Debug-USB port 8 and re-run this command")
+    }
+
+    if let oemTTY = snapshot.oemConfigCandidates.first(where: { $0.recommended })?.path {
+        print("[oem-config] \(oemTTY)")
+        print("  Console:       \(JetsonThorQuickStartSupport.oemConfigConsoleCommand(serialPath: oemTTY))")
+    } else {
+        print("[oem-config] not detected yet")
+        print("  note: this appears only after the installer finishes and the cable moves to USB-C 5a")
+    }
+
+    print("")
+    if snapshot.usbTetherDetected {
+        print("[usb-tether] host addresses: \(snapshot.usbTetherHostAddresses.joined(separator: ", "))")
+    } else {
+        print("[usb-tether] no 192.168.55.x host address detected yet")
+    }
+    print("  SSH:           \(JetsonThorQuickStartSupport.usbSSHCommand(username: username))")
+    print("  JetPack:       \(JetsonThorQuickStartSupport.jetPackInstallCommand(username: username))")
+    print("  Docker smoke:  \(JetsonThorQuickStartSupport.dockerSmokeTestCommand(username: username))")
+
+    if let publicKey = snapshot.publicKeyCandidates.first(where: { $0.recommended })?.path {
+        print("")
+        print("[pubkey]      \(publicKey)")
+        print("  Bootstrap:    Scripts/jetson-thor/bootstrap_ssh.sh \(username)@192.168.55.1 \(publicKey)")
+    } else {
+        print("")
+        print("[pubkey]      no public key detected under ~/.ssh")
+    }
+
+    print("")
+    print("Docs:")
+    print("  Repo runbook: docs/setup/jetson-agx-thor-headless-quickstart.md")
+    print("  NVIDIA guide: https://docs.nvidia.com/jetson/agx-thor-devkit/user-guide/latest/quick_start.html")
 }
 
 func listRegistries() async {
@@ -156,14 +327,15 @@ func listRegistries() async {
             return
         }
 
-        print(String(format: "%-4s %-24s %-32s %-8s", "ID", "NAME", "ENDPOINT", "STATUS"))
+        print(tableRow([("ID", 4), ("NAME", 24), ("ENDPOINT", 32), ("STATUS", 8)]))
         print(String(repeating: "-", count: 78))
         for profile in profiles {
-            print(String(format: "%-4d %-24s %-32s %-8s",
-                         profile.id ?? 0,
-                         String(profile.displayName.prefix(24)),
-                         String(profile.endpointLabel.prefix(32)),
-                         profile.lastValidationStatus.rawValue))
+            print(tableRow([
+                ("\(profile.id ?? 0)", 4),
+                (profile.displayName, 24),
+                (profile.endpointLabel, 32),
+                (profile.lastValidationStatus.rawValue, 8),
+            ]))
         }
     } catch {
         print("Error: \(error.localizedDescription)")
@@ -268,14 +440,15 @@ func dockerStatus(port: Int) async {
             print("No Docker containers found.")
             return
         }
-        print(String(format: "%-15s %-30s %-12s %-30s", "NAME", "IMAGE", "STATE", "STATUS"))
+        print(tableRow([("NAME", 15), ("IMAGE", 30), ("STATE", 12), ("STATUS", 30)]))
         print(String(repeating: "-", count: 90))
         for c in response.containers {
-            print(String(format: "%-15s %-30s %-12s %-30s",
-                         String(c.name.prefix(15)),
-                         String(c.image.prefix(30)),
-                         c.state,
-                         String(c.status.prefix(30))))
+            print(tableRow([
+                (c.name, 15),
+                (c.image, 30),
+                (c.state, 12),
+                (c.status, 30),
+            ]))
         }
     } catch {
         print("Error: \(error.localizedDescription)")
@@ -380,6 +553,102 @@ func ros2Topics(port: Int) async {
         }
         print("ROS2 Topics (\(response.count)):")
         for topic in response.topics { print("  \(topic.name) [\(topic.type)]") }
+    } catch {
+        print("Error: \(error.localizedDescription)")
+    }
+}
+
+func ros2GraphCmd(port: Int) async {
+    let client = AgentClient(port: port)
+    do {
+        let response = try await client.ros2Graph()
+        print("ROS2 Graph (\(response.graph.nodes.count) nodes, \(response.graph.edges.count) edges)")
+        print(String(repeating: "-", count: 72))
+        for node in response.graph.nodes {
+            print("NODE  \(node.name) [\(node.kind)]")
+        }
+        for edge in response.graph.edges {
+            print("EDGE  \(edge.from) -> \(edge.to) via \(edge.topic) [\(edge.messageType)]")
+        }
+    } catch {
+        print("Error: \(error.localizedDescription)")
+    }
+}
+
+func ros2ParamsCmd(port: Int, node: String) async {
+    let client = AgentClient(port: port)
+    do {
+        let response = try await client.ros2Parameters(node: node.isEmpty ? nil : node)
+        if response.parameters.isEmpty {
+            print(response.error ?? "No ROS2 parameters found.")
+            return
+        }
+        print("ROS2 Parameters (\(response.parameters.count)):")
+        for parameter in response.parameters {
+            let readOnly = parameter.readOnly ? " ro" : ""
+            print("  \(parameter.node) :: \(parameter.name)=\(parameter.value) [\(parameter.type)\(readOnly)]")
+        }
+    } catch {
+        print("Error: \(error.localizedDescription)")
+    }
+}
+
+func ros2ActionsCmd(port: Int) async {
+    let client = AgentClient(port: port)
+    do {
+        let response = try await client.ros2Actions()
+        if response.actions.isEmpty {
+            print(response.error ?? "No ROS2 actions found.")
+            return
+        }
+        print("ROS2 Actions (\(response.actions.count)):")
+        for action in response.actions {
+            print("  \(action.name) [\(action.type)]")
+        }
+    } catch {
+        print("Error: \(error.localizedDescription)")
+    }
+}
+
+func streamsCmd(port: Int) async {
+    let client = AgentClient(port: port)
+    do {
+        let response = try await client.streamCatalog()
+        if response.streams.isEmpty {
+            print("No streams found.")
+            return
+        }
+        print("Streams (\(response.streams.count)):")
+        for stream in response.streams {
+            let topicSuffix = stream.topic.map { " \($0)" } ?? ""
+            print("  [\(stream.kind.rawValue)] \(stream.id) — \(stream.origin.rawValue)\(topicSuffix)")
+        }
+    } catch {
+        print("Error: \(error.localizedDescription)")
+    }
+}
+
+func streamStatsCmd(port: Int, sourceID: String?) async {
+    let client = AgentClient(port: port)
+    do {
+        if let sourceID, !sourceID.isEmpty {
+            let response = try await client.streamHealth(sourceID: sourceID)
+            print("Stream \(response.health.sourceID)")
+            print("  Status:      \(response.health.status.rawValue)")
+            print("  FPS:         \(response.health.fps.map { String(format: "%.1f", $0) } ?? "—")")
+            print("  Resolution:  \(response.health.width.map(String.init) ?? "—")x\(response.health.height.map(String.init) ?? "—")")
+            print("  Last Frame:  \(response.health.lastFrameAt ?? "—")")
+            print("  Transport:   \(response.health.transportHealthy ? "healthy" : "degraded")")
+            print("  Timestamps:  \(response.health.timestampsSane ? "sane" : "skewed")")
+            print("  Rate Band:   \(response.health.expectedRate ? "expected" : "unexpected")")
+            return
+        }
+
+        let catalog = try await client.streamCatalog()
+        for stream in catalog.streams {
+            let health = try await client.streamHealth(sourceID: stream.id)
+            print("\(stream.id): \(health.health.status.rawValue) — fps \(health.health.fps.map { String(format: "%.1f", $0) } ?? "—")")
+        }
     } catch {
         print("Error: \(error.localizedDescription)")
     }
@@ -563,9 +832,15 @@ func disksCmd(port: Int) async {
     let client = AgentClient(port: port)
     do {
         let d = try await client.disks()
-        print(String(format: "%-20s %-8s %-8s %-8s %s", "MOUNT", "SIZE", "USED", "AVAIL", "USE%"))
+        print(tableRow([("MOUNT", 20), ("SIZE", 8), ("USED", 8), ("AVAIL", 8), ("USE%", 8)]))
         for fs in d.filesystems {
-            print(String(format: "%-20s %-8s %-8s %-8s %s", fs.mount, fs.size, fs.used, fs.available, fs.percent))
+            print(tableRow([
+                (fs.mount, 20),
+                (fs.size, 8),
+                (fs.used, 8),
+                (fs.available, 8),
+                (fs.percent, 8),
+            ]))
         }
     } catch { print("Error: \(error.localizedDescription)") }
 }
@@ -576,9 +851,35 @@ func camerasCmd(port: Int) async {
         let c = try await client.cameras()
         print("Cameras (\(c.count)):")
         for cam in c.cameras {
-            print("  [\(cam.type)] \(cam.name) — \(cam.device)")
+            let source = cam.source.map { " \($0)" } ?? ""
+            let preview = cam.previewPath != nil ? " snapshot" : ""
+            print("  [\(cam.type)\(source)] \(cam.name) — \(cam.device)\(preview)")
         }
     } catch { print("Error: \(error.localizedDescription)") }
+}
+
+func cameraSnapshotCmd(port: Int, cameraID: String, outputPath: String) async {
+    guard !cameraID.isEmpty else {
+        print("Usage: thorctl camera-snapshot <port> <camera-id|bridge:camera-id> [output.jpg]")
+        return
+    }
+
+    let normalizedCameraID: String
+    if cameraID.hasPrefix("bridge:") {
+        normalizedCameraID = String(cameraID.dropFirst("bridge:".count))
+    } else {
+        normalizedCameraID = cameraID
+    }
+
+    let client = AgentClient(port: port)
+    do {
+        let data = try await client.cameraSnapshot(cameraID: normalizedCameraID)
+        let destinationURL = URL(fileURLWithPath: outputPath, relativeTo: URL(fileURLWithPath: FileManager.default.currentDirectoryPath))
+        try data.write(to: destinationURL)
+        print("Saved camera snapshot to \(destinationURL.path)")
+    } catch {
+        print("Error: \(error.localizedDescription)")
+    }
 }
 
 func gpuCmd(port: Int) async {
@@ -586,15 +887,36 @@ func gpuCmd(port: Int) async {
     do {
         let g = try await client.gpuDetail()
         print("GPU:        \(g.gpuName)")
-        print("CUDA:       \(g.cudaVersion ?? "N/A")")
-        print("TensorRT:   \(g.tensorrtVersion ?? "N/A")")
+        print("Backend:    \(g.backend == "mlx" ? "MLX / Metal" : "Jetson CUDA")")
+        if let runtimeLabel = g.runtimeLabel {
+            print("Runtime:    \(runtimeLabel)")
+        }
+        if let metalAvailable = g.metalAvailable {
+            print("Metal:      \(metalAvailable ? "Available" : "Unavailable")")
+        }
+        if let cudaVersion = g.cudaVersion {
+            print("CUDA:       \(cudaVersion)")
+        }
+        if let tensorrtVersion = g.tensorrtVersion {
+            print("TensorRT:   \(tensorrtVersion)")
+        }
         print("Memory:     \(g.memoryUsedMb)/\(g.memoryTotalMb) MB")
-        print("Temp:       \(Int(g.temperatureC))°C")
-        print("Power:      \(String(format: "%.1f", g.powerDrawW)) W")
+        if g.backend != "mlx" {
+            print("Temp:       \(Int(g.temperatureC))°C")
+            print("Power:      \(String(format: "%.1f", g.powerDrawW)) W")
+        }
+        if let cachedModels = g.cachedModels {
+            print("Cached:     \(cachedModels)")
+        }
+        if let loadedModels = g.loadedModels {
+            print("Loaded:     \(loadedModels)")
+        }
         let m = try await client.modelList()
         if m.count > 0 {
             print("Models (\(m.count)):")
             for model in m.models { print("  [\(model.format)] \(model.name)") }
+        } else {
+            print("Models:     none cached")
         }
     } catch { print("Error: \(error.localizedDescription)") }
 }
@@ -612,10 +934,15 @@ func networkCmd(port: Int) async {
     let client = AgentClient(port: port)
     do {
         let n = try await client.networkInterfaces()
-        print(String(format: "%-12s %-6s %-18s %s", "IFACE", "STATE", "IP", "MAC"))
+        print(tableRow([("IFACE", 12), ("STATE", 6), ("IP", 18), ("MAC", 17)]))
         for iface in n.interfaces {
             let ip = iface.addresses?.first { $0.family == "inet" }?.address ?? "—"
-            print(String(format: "%-12s %-6s %-18s %s", iface.name, iface.state ?? "?", ip, iface.mac ?? ""))
+            print(tableRow([
+                (iface.name, 12),
+                (iface.state ?? "?", 6),
+                (ip, 18),
+                (iface.mac ?? "", 17),
+            ]))
         }
     } catch { print("Error: \(error.localizedDescription)") }
 }
@@ -630,6 +957,140 @@ func ros2EchoCmd(port: Int, topic: String) async {
             print(r.error ?? "No message received")
         }
     } catch { print("Error: \(error.localizedDescription)") }
+}
+
+func recipeRunCmd(port: Int, identifier: String, overrides: [String]) async {
+    guard !identifier.isEmpty else {
+        print("Usage: thorctl recipe run <port> <recipe-id|name> [KEY=VALUE ...]")
+        return
+    }
+
+    do {
+        let db = try DatabaseManager(path: DatabaseManager.defaultPath)
+        let records = try await db.reader.read { dbConn in
+            try DeployRecipeRecord.fetchAll(dbConn)
+        }
+
+        let decoder = JSONDecoder()
+        let recipes = records.compactMap { record -> DeployRecipe? in
+            guard let data = record.recipeJSON.data(using: .utf8),
+                  var recipe = try? decoder.decode(DeployRecipe.self, from: data)
+            else { return nil }
+            recipe.id = record.id
+            return recipe
+        }
+
+        guard let recipe = recipes.first(where: {
+            if let id = $0.id, String(id) == identifier { return true }
+            return $0.name.caseInsensitiveCompare(identifier) == .orderedSame
+        }) else {
+            print("Recipe not found: \(identifier)")
+            return
+        }
+
+        let client = AgentClient(port: port)
+        var variableMap: [String: String] = [:]
+        for variable in recipe.variables {
+            variableMap[variable.key] = variable.defaultValue ?? ""
+        }
+        for override in overrides {
+            let parts = override.split(separator: "=", maxSplits: 1).map(String.init)
+            guard parts.count == 2 else { continue }
+            variableMap[parts[0]] = parts[1]
+        }
+
+        print("Running recipe: \(recipe.name)")
+        print(String(repeating: "-", count: 72))
+
+        for prerequisite in recipe.prerequisites {
+            let command = substituteRecipeVariables(in: prerequisite.command, variables: variableMap)
+            let result = try await client.exec(command: command, timeout: 20)
+            let combined = [result.stdout, result.stderr].joined(separator: "\n")
+            let matched = prerequisite.expectedSubstring.map { combined.contains($0) } ?? (result.exitCode == 0)
+            print("[\(matched ? "PASS" : "FAIL")] prerequisite \(prerequisite.name)")
+            if !matched || result.exitCode != 0 {
+                print("Stopping: prerequisite failed")
+                return
+            }
+        }
+
+        var failed = false
+        for step in recipe.steps {
+            let command = substituteRecipeVariables(in: step.command, variables: variableMap)
+            print("[STEP] \(step.name) — \(step.type.rawValue)")
+            let success: Bool
+            switch step.type {
+            case .registryPreflight:
+                let registry = command.split(separator: "/").first.map(String.init) ?? command
+                let response = try await client.validateDeviceRegistry(registryAddress: registry, image: command)
+                success = response.ready
+                for stage in response.stages {
+                    print("  \(stage.name): \(stage.status.rawValue) — \(stage.message)")
+                }
+            case .dockerPull:
+                let actualCommand = command.hasPrefix("docker ") ? command : "docker pull \(command)"
+                let result = try await client.exec(command: actualCommand, timeout: step.timeout)
+                success = result.exitCode == 0
+                if !result.stdout.isEmpty { print(result.stdout) }
+                if !result.stderr.isEmpty { print(result.stderr) }
+            default:
+                let result = try await client.exec(command: command, timeout: step.timeout)
+                success = result.exitCode == 0
+                if !result.stdout.isEmpty { print(result.stdout) }
+                if !result.stderr.isEmpty { print(result.stderr) }
+            }
+
+            if !success {
+                failed = true
+                print("[FAIL] \(step.name)")
+                if step.stopOnFailure { break }
+            } else {
+                print("[PASS] \(step.name)")
+            }
+        }
+
+        if !failed {
+            for assertion in recipe.readinessAssertions {
+                let command = substituteRecipeVariables(in: assertion.command, variables: variableMap)
+                let result = try await client.exec(command: command, timeout: 20)
+                let combined = [result.stdout, result.stderr].joined(separator: "\n")
+                let matched = assertion.expectedSubstring.map { combined.contains($0) } ?? (result.exitCode == 0)
+                print("[\(matched ? "PASS" : "FAIL")] assertion \(assertion.name)")
+                if !matched {
+                    failed = true
+                }
+            }
+        }
+
+        if failed, !recipe.rollbackSteps.isEmpty {
+            print("")
+            print("Rollback guidance:")
+            for step in recipe.rollbackSteps {
+                let command = substituteRecipeVariables(in: step.command, variables: variableMap)
+                print("  - \(step.name): \(command)")
+            }
+        }
+    } catch {
+        print("Error: \(error.localizedDescription)")
+    }
+}
+
+func diagnosticsCollectCmd(port: Int, outputPath: String) async {
+    let client = AgentClient(port: port)
+    do {
+        let data = try await client.diagnosticsArchive()
+        let destinationURL = URL(fileURLWithPath: outputPath, relativeTo: URL(fileURLWithPath: FileManager.default.currentDirectoryPath))
+        try data.write(to: destinationURL)
+        print("Saved diagnostics archive to \(destinationURL.path)")
+    } catch {
+        print("Error: \(error.localizedDescription)")
+    }
+}
+
+private func substituteRecipeVariables(in template: String, variables: [String: String]) -> String {
+    variables.reduce(template) { partialResult, entry in
+        partialResult.replacingOccurrences(of: "{{\(entry.key)}}", with: entry.value)
+    }
 }
 
 // MARK: - Screenshot
@@ -663,11 +1124,12 @@ func watchMetrics(port: Int, interval: Int) async {
     while !Task.isCancelled {
         do {
             let m = try await client.metrics()
-            let line = String(format: "CPU: %5.1f%%  MEM: %4d/%4d MB (%4.0f%%)  DISK: %5.1f/%5.1f GB  LOAD: %s",
-                              m.cpu.percent,
-                              m.memory.usedMb, m.memory.totalMb, m.memory.percent,
-                              m.disk.usedGb, m.disk.totalGb,
-                              m.cpu.loadAvg.map { String(format: "%.2f", $0) }.joined(separator: " "))
+            let load = m.cpu.loadAvg.map { String(format: "%.2f", $0) }.joined(separator: " ")
+            let line = "CPU: \(String(format: "%5.1f", m.cpu.percent))%  " +
+                "MEM: \(String(format: "%4d", m.memory.usedMb))/\(String(format: "%4d", m.memory.totalMb)) MB " +
+                "(\(String(format: "%4.0f", m.memory.percent))%)  " +
+                "DISK: \(String(format: "%5.1f", m.disk.usedGb))/\(String(format: "%5.1f", m.disk.totalGb)) GB  " +
+                "LOAD: \(load)"
             print("\(timestamp()) \(line)")
         } catch {
             print("\(timestamp()) Error: \(error.localizedDescription)")
@@ -693,6 +1155,9 @@ func printUsage() {
 
     DEVICE COMMANDS:
       devices, ls                   List registered devices
+      discover                      Probe registered devices and default simulator ports
+      quickstart [username]         Print the Mac-side Jetson AGX Thor headless bring-up flow
+      doctor [port]                 Run connection/readiness checks against a device
       registries                    List saved OCI registry profiles
       connect <host> [port]         Connect and show device info
       registry-validate <id|name|host>  Validate a saved OCI registry profile
@@ -706,6 +1171,9 @@ func printUsage() {
       metrics [port]                Show system metrics
       exec <port> <command>         Execute command on device
       docker [port]                 List Docker containers
+      cameras [port]                List detected and bridged cameras
+      camera-snapshot <port> <camera-id|bridge:camera-id> [output.jpg]
+                                   Save the latest camera snapshot from the agent
 
     ANIMA COMMANDS:
       anima-modules, modules [port]           List ANIMA modules
@@ -716,6 +1184,19 @@ func printUsage() {
     ROS2 COMMANDS:
       ros2-nodes [port]             List ROS2 nodes
       ros2-topics [port]            List ROS2 topics
+      ros2 graph [port]             Show ROS2 graph snapshot
+      ros2 params [port] [node]     Show ROS2 parameters
+      ros2 actions [port]           Show ROS2 actions
+
+    STREAMS:
+      streams [port]                List available image and scan streams
+      stream-stats [port] [source]  Show stream health for one or all sources
+
+    RECIPES / DIAGNOSTICS:
+      recipe run <port> <recipe> [KEY=VALUE ...]
+                                   Run a typed deploy recipe from the THOR database
+      diagnostics collect <port> [output.zip]
+                                   Save a diagnostics archive from the device
 
     MONITORING:
       watch [port] [interval]       Live metrics dashboard (default: 5s interval)

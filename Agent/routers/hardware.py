@@ -1,11 +1,36 @@
 """Hardware detection: cameras, GPIO, I2C, USB, serial ports."""
 
+import binascii
+import base64
 import os
 import subprocess
-from fastapi import APIRouter
-from sim import is_sim
+import time
+from fastapi import APIRouter, HTTPException
+from fastapi.responses import Response
+from sim import active_camera_bridges, is_sim, set_sim_state, get_sim_state
 
 router = APIRouter(prefix="/v1/hardware", tags=["hardware"])
+
+MAX_BRIDGE_FRAME_BYTES = 2_000_000
+
+
+def _bridged_camera_records():
+    cameras = []
+    for camera_id, bridge in active_camera_bridges(max_age_seconds=30).items():
+        cameras.append({
+            "name": bridge.get("name", "Bridged Camera"),
+            "device": f"bridge:{camera_id}",
+            "type": bridge.get("type", "USB"),
+            "details": bridge.get("details", "Bridged from host macOS camera"),
+            "source": "bridge",
+            "bridge_state": "active",
+            "preview_path": f"/v1/hardware/cameras/{camera_id}/snapshot",
+            "width": bridge.get("width"),
+            "height": bridge.get("height"),
+            "fps": bridge.get("fps"),
+            "last_frame_at": bridge.get("captured_at"),
+        })
+    return cameras
 
 
 @router.get("/cameras")
@@ -48,11 +73,91 @@ async def list_cameras():
 
     if is_sim() and not cameras:
         cameras = [
-            {"name": "Simulated CSI Camera", "device": "/dev/video0", "type": "CSI"},
-            {"name": "Simulated USB Camera", "device": "/dev/video1", "type": "USB"},
+            {"name": "Simulated CSI Camera", "device": "/dev/video0", "type": "CSI", "source": "simulated"},
+            {"name": "Simulated USB Camera", "device": "/dev/video1", "type": "USB", "source": "simulated"},
         ]
 
+    cameras.extend(_bridged_camera_records())
+
     return {"cameras": cameras, "count": len(cameras)}
+
+
+@router.post("/camera-bridge/frame")
+async def ingest_camera_bridge_frame(payload: dict):
+    """Ingest a host-provided JPEG frame so the sim can expose a real camera source."""
+    camera_id = str(payload.get("camera_id", "")).strip()
+    name = str(payload.get("name", "")).strip()
+    camera_type = str(payload.get("type", "USB")).strip() or "USB"
+    captured_at = str(payload.get("captured_at", "")).strip()
+    jpeg_base64 = payload.get("jpeg_base64", "")
+
+    if not camera_id:
+        raise HTTPException(status_code=400, detail="camera_id is required")
+    if not name:
+        raise HTTPException(status_code=400, detail="name is required")
+    if not jpeg_base64 or not isinstance(jpeg_base64, str):
+        raise HTTPException(status_code=400, detail="jpeg_base64 is required")
+
+    try:
+        frame_bytes = base64.b64decode(jpeg_base64, validate=True)
+    except (ValueError, binascii.Error):
+        raise HTTPException(status_code=400, detail="jpeg_base64 is not valid base64")
+
+    if len(frame_bytes) > MAX_BRIDGE_FRAME_BYTES:
+        raise HTTPException(status_code=413, detail="frame exceeds maximum accepted size")
+
+    width = payload.get("width")
+    height = payload.get("height")
+    fps = payload.get("fps")
+
+    bridges = dict(get_sim_state("camera_bridges", {}))
+    bridges[camera_id] = {
+        "name": name,
+        "type": camera_type,
+        "details": payload.get("details", "Bridged from host macOS camera"),
+        "width": width,
+        "height": height,
+        "fps": fps,
+        "captured_at": captured_at,
+        "last_frame_time": time.time(),
+        "frame_bytes": frame_bytes,
+    }
+    set_sim_state("camera_bridges", bridges)
+
+    return {
+        "status": "ok",
+        "camera_id": camera_id,
+        "bridge_state": "active",
+        "preview_path": f"/v1/hardware/cameras/{camera_id}/snapshot",
+    }
+
+
+@router.delete("/camera-bridge/{camera_id}")
+async def remove_camera_bridge(camera_id: str):
+    bridges = dict(get_sim_state("camera_bridges", {}))
+    removed = bridges.pop(camera_id, None)
+    set_sim_state("camera_bridges", bridges)
+    return {
+        "status": "ok",
+        "camera_id": camera_id,
+        "bridge_state": "removed" if removed else "missing",
+    }
+
+
+@router.get("/cameras/{camera_id}/snapshot")
+async def camera_snapshot(camera_id: str):
+    bridge = active_camera_bridges(max_age_seconds=30).get(camera_id)
+    if not bridge or not bridge.get("frame_bytes"):
+        raise HTTPException(status_code=404, detail="snapshot not available")
+
+    return Response(
+        content=bridge["frame_bytes"],
+        media_type="image/jpeg",
+        headers={
+            "Cache-Control": "no-store, max-age=0",
+            "X-THOR-Camera-Bridge": "active",
+        },
+    )
 
 
 @router.get("/gpio")

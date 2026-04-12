@@ -8,14 +8,22 @@ struct DeviceDetailView: View {
     @State private var metrics: AgentMetricsResponse?
     @State private var isConnecting = false
     @State private var errorMessage: String?
-    @State private var selectedTab: DetailTab? = .overview
     @State private var showingRebootConfirm = false
     @State private var showingExportDebug = false
     @State private var metricsTimer: Task<Void, Never>?
     @State private var lastMetricsRefresh: Date?
+    @State private var collectingDiagnostics = false
 
     private var isConnected: Bool {
         appState.connectionStatus(for: device.id ?? 0) == .connected
+    }
+
+    private var selectedTab: DetailTab {
+        appState.selectedDetailTab
+    }
+
+    private var capabilityMatrix: CapabilityMatrix {
+        appState.capabilityMatrix(for: device.id ?? 0)
     }
 
     var body: some View {
@@ -23,10 +31,10 @@ struct DeviceDetailView: View {
             // Feature sidebar — plain VStack buttons for reliable click handling
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    sidebarGroup("DEVICE", [.overview, .system, .power, .hardware])
+                    sidebarGroup("DEVICE", [.overview, .setup, .system, .power, .hardware, .sensors])
                     sidebarGroup("RUNTIME", [.docker, .ros2, .anima])
                     sidebarGroup("OPERATIONS", [.files, .deploy, .gpu])
-                    sidebarGroup("OBSERVE", [.logs, .history])
+                    sidebarGroup("OBSERVE", [.diagnostics, .logs, .history])
                 }
                 .padding(.vertical, 8)
             }
@@ -45,6 +53,21 @@ struct DeviceDetailView: View {
         }
         .navigationTitle(device.displayName)
         .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                if isConnected {
+                    Button {
+                        Task { await collectDiagnosticsArchive() }
+                    } label: {
+                        if collectingDiagnostics {
+                            ProgressView()
+                                .controlSize(.small)
+                        } else {
+                            Label("Collect Diagnostics", systemImage: "archivebox")
+                        }
+                    }
+                    .disabled(collectingDiagnostics)
+                }
+            }
             ToolbarItem(placement: .primaryAction) {
                 TerminalToolbar(device: device)
             }
@@ -89,9 +112,10 @@ struct DeviceDetailView: View {
                 .padding(.bottom, 4)
 
             ForEach(items, id: \.self) { tab in
+                let gate = capabilityMatrix.gate(for: tab.rawValue)
                 Button {
                     withAnimation(.easeInOut(duration: 0.15)) {
-                        selectedTab = tab
+                        appState.selectedDetailTab = tab
                     }
                 } label: {
                     HStack(spacing: 6) {
@@ -102,6 +126,11 @@ struct DeviceDetailView: View {
                         Text(tab.label)
                             .font(.system(size: 12, weight: selectedTab == tab ? .semibold : .regular))
                             .foregroundStyle(selectedTab == tab ? .white : .primary)
+                        if gate.state != .supported {
+                            Image(systemName: gateIcon(for: gate.state))
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundStyle(selectedTab == tab ? .white.opacity(0.85) : gateColor(for: gate.state))
+                        }
                         Spacer()
                     }
                     .padding(.horizontal, 8)
@@ -111,51 +140,83 @@ struct DeviceDetailView: View {
                     .padding(.horizontal, 4)
                 }
                 .buttonStyle(.plain)
+                .opacity(gate.state == .unsupported ? 0.7 : 1)
             }
         }
     }
 
     @ViewBuilder
     private var featureContent: some View {
-        switch selectedTab ?? .overview {
+        switch selectedTab {
         case .overview:
             deviceHeader
             if let errorMessage { errorBanner(errorMessage) }
             connectionCard
+            ReadinessBoardView(deviceID: device.id ?? 0)
             if isConnected { metricsCard }
             capabilitiesCard
             quickActions
+        case .setup:
+            SetupView(device: device)
         case .system:
-            if let id = device.id { SystemInfoView(deviceID: id) } else { notConnectedPlaceholder }
+            gatedContent(for: .system) {
+                if let id = device.id { SystemInfoView(deviceID: id) } else { notConnectedPlaceholder }
+            }
         case .power:
-            if isConnected, let id = device.id { PowerView(deviceID: id) } else { notConnectedPlaceholder }
+            gatedContent(for: .power) {
+                if isConnected, let id = device.id { PowerView(deviceID: id) } else { notConnectedPlaceholder }
+            }
         case .hardware:
-            if isConnected, let id = device.id { HardwareView(deviceID: id) } else { notConnectedPlaceholder }
+            gatedContent(for: .hardware) {
+                if isConnected, let id = device.id { HardwareView(deviceID: id) } else { notConnectedPlaceholder }
+            }
+        case .sensors:
+            gatedContent(for: .sensors) {
+                if isConnected, let id = device.id { SensorsView(deviceID: id) } else { notConnectedPlaceholder }
+            }
         case .docker:
-            if isConnected, let id = device.id { DockerView(deviceID: id) } else { notConnectedPlaceholder }
+            gatedContent(for: .docker) {
+                if isConnected, let id = device.id { DockerView(deviceID: id) } else { notConnectedPlaceholder }
+            }
         case .ros2:
-            if isConnected, let id = device.id { ROS2InspectorView(deviceID: id) } else { notConnectedPlaceholder }
+            gatedContent(for: .ros2) {
+                if isConnected, let id = device.id { ROS2InspectorView(deviceID: id) } else { notConnectedPlaceholder }
+            }
         case .anima:
-            if isConnected {
-                VStack(alignment: .leading, spacing: 16) {
-                    ANIMAModuleListView(device: device)
-                    PipelineStatusView(device: device)
-                }
-            } else { notConnectedPlaceholder }
+            gatedContent(for: .anima) {
+                if isConnected {
+                    VStack(alignment: .leading, spacing: 16) {
+                        ANIMAModuleListView(device: device)
+                        PipelineStatusView(device: device)
+                    }
+                } else { notConnectedPlaceholder }
+            }
         case .files:
-            if isConnected { FileTransferView(device: device) } else { notConnectedPlaceholder }
+            gatedContent(for: .files) {
+                if isConnected { FileTransferView(device: device) } else { notConnectedPlaceholder }
+            }
         case .deploy:
-            if isConnected { DeployView(device: device) } else { notConnectedPlaceholder }
+            gatedContent(for: .deploy) {
+                if isConnected { DeployView(device: device) } else { notConnectedPlaceholder }
+            }
         case .gpu:
-            if isConnected, let id = device.id { GPUView(deviceID: id) } else { notConnectedPlaceholder }
+            gatedContent(for: .gpu) {
+                if isConnected, let id = device.id { GPUView(deviceID: id) } else { notConnectedPlaceholder }
+            }
         case .logs:
-            if isConnected, let id = device.id { LogStreamView(deviceID: id) } else { notConnectedPlaceholder }
+            gatedContent(for: .logs) {
+                if isConnected, let id = device.id { LogStreamView(deviceID: id) } else { notConnectedPlaceholder }
+            }
         case .history:
             if let id = device.id {
                 VStack(alignment: .leading, spacing: 16) {
                     EventTimelineView(deviceID: id)
                     TransferHistoryView(deviceID: id)
                 }
+            }
+        case .diagnostics:
+            gatedContent(for: .diagnostics) {
+                DiagnosticsView(device: device)
             }
         }
     }
@@ -176,15 +237,20 @@ struct DeviceDetailView: View {
                 .frame(maxWidth: 300)
 
             HStack(spacing: 12) {
+                Button("Open Setup & Doctor") {
+                    appState.selectedDetailTab = .setup
+                }
+                .buttonStyle(.borderedProminent)
+
                 switch status {
                 case .authFailed:
                     Button("Update Credentials") {
-                        // Re-open device settings
+                        appState.selectedDetailTab = .setup
                     }
                     .buttonStyle(.bordered)
                 case .hostKeyMismatch:
                     Button("Review Host Key") {
-                        // Show host key verification
+                        appState.selectedDetailTab = .setup
                     }
                     .buttonStyle(.bordered)
                     .tint(.orange)
@@ -442,11 +508,8 @@ struct DeviceDetailView: View {
                     actionButton("Reboot", systemImage: "restart", role: .destructive) {
                         showingRebootConfirm = true
                     }
-                    actionButton("Export Debug", systemImage: "square.and.arrow.up", role: nil) {
-                        Task {
-                            let exporter = DebugBundleExporter(appState: appState)
-                            try? await exporter.export(for: device)
-                        }
+                    actionButton("Collect Diagnostics", systemImage: "archivebox", role: nil) {
+                        Task { await collectDiagnosticsArchive() }
                     }
                 } else {
                     Button {
@@ -520,6 +583,50 @@ struct DeviceDetailView: View {
         .buttonStyle(.bordered)
     }
 
+    @ViewBuilder
+    private func gatedContent<Content: View>(
+        for tab: DetailTab,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        let gate = capabilityMatrix.gate(for: tab.rawValue)
+        switch gate.state {
+        case .supported:
+            content()
+        case .degraded:
+            VStack(alignment: .leading, spacing: 16) {
+                capabilityNotice(gate)
+                content()
+            }
+        case .unsupported, .needsSetup:
+            CapabilityGateView(gate: gate)
+        }
+    }
+
+    private func capabilityNotice(_ gate: CapabilityGate) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: gateIcon(for: gate.state))
+                .foregroundStyle(gateColor(for: gate.state))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(gate.state == .degraded ? "Available with Limits" : "Needs Attention")
+                    .font(.system(size: 13, weight: .medium))
+                Text(gate.reason)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            if let actionLabel = gate.actionLabel {
+                Button(actionLabel) {
+                    appState.selectedDetailTab = .setup
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
+        }
+        .padding(12)
+        .background(gateColor(for: gate.state).opacity(0.08))
+        .clipShape(.rect(cornerRadius: 10))
+    }
+
     private func statusColor(for status: ConnectionStatus) -> Color {
         switch status {
         case .connected: .green
@@ -542,6 +649,24 @@ struct DeviceDetailView: View {
         }
     }
 
+    private func gateIcon(for state: CapabilityState) -> String {
+        switch state {
+        case .supported: "checkmark.circle"
+        case .degraded: "exclamationmark.triangle"
+        case .unsupported: "slash.circle"
+        case .needsSetup: "wrench.and.screwdriver"
+        }
+    }
+
+    private func gateColor(for state: CapabilityState) -> Color {
+        switch state {
+        case .supported: .green
+        case .degraded: .orange
+        case .unsupported: .red
+        case .needsSetup: .blue
+        }
+    }
+
     private func loadSnapshot() async {
         guard let deviceID = device.id else { return }
         latestSnapshot = try? await appState.latestSnapshot(for: deviceID)
@@ -561,7 +686,8 @@ struct DeviceDetailView: View {
         do {
             // For Docker sims, connect directly
             if device.hostname == "localhost" || device.hostname == "127.0.0.1" {
-                try await appState.connectDevice(device, directPort: 8470)
+                let port = device.displayName.contains("Orin") ? 8471 : 8470
+                try await appState.connectDevice(device, directPort: port)
             } else {
                 try await appState.connectDevice(device)
             }
@@ -572,59 +698,17 @@ struct DeviceDetailView: View {
         }
         isConnecting = false
     }
-}
 
-// MARK: - Tab Enum
+    private func collectDiagnosticsArchive() async {
+        collectingDiagnostics = true
+        defer { collectingDiagnostics = false }
 
-private enum DetailTab: String, CaseIterable {
-    // DEVICE
-    case overview
-    case system
-    case power
-    case hardware
-    // RUNTIME
-    case docker
-    case ros2
-    case anima
-    // OPERATIONS
-    case files
-    case deploy
-    case gpu
-    // OBSERVE
-    case logs
-    case history
-
-    var label: String {
-        switch self {
-        case .overview: "Overview"
-        case .system: "System"
-        case .power: "Power"
-        case .hardware: "Hardware"
-        case .docker: "Docker"
-        case .ros2: "ROS2"
-        case .anima: "ANIMA"
-        case .files: "Files"
-        case .deploy: "Deploy"
-        case .gpu: "GPU & Models"
-        case .logs: "Logs"
-        case .history: "History"
-        }
-    }
-
-    var icon: String {
-        switch self {
-        case .overview: "cpu"
-        case .system: "info.circle"
-        case .power: "bolt.fill"
-        case .hardware: "cable.connector"
-        case .docker: "shippingbox"
-        case .ros2: "point.3.connected.trianglepath.dotted"
-        case .anima: "brain"
-        case .files: "arrow.up.doc"
-        case .deploy: "play.rectangle"
-        case .gpu: "gpu"
-        case .logs: "doc.text"
-        case .history: "clock.arrow.circlepath"
+        do {
+            let archiveURL = try await appState.collectDiagnostics(for: device)
+            errorMessage = nil
+            NSWorkspace.shared.activateFileViewerSelecting([archiveURL])
+        } catch {
+            errorMessage = error.localizedDescription
         }
     }
 }

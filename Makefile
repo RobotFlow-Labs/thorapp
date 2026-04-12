@@ -1,4 +1,4 @@
-.PHONY: build test run package install clean docker-up docker-down lint icon help
+.PHONY: build release test test-unit run package dist install-cli clean docker-up docker-down docker-logs lint icon help
 
 # Default target
 help:
@@ -13,6 +13,7 @@ help:
 	@echo "  test-unit   Run unit tests only (no Docker needed)"
 	@echo "  run         Build, package, and launch the app"
 	@echo "  package     Package .app bundle (release)"
+	@echo "  dist        Build release artifacts into dist/"
 	@echo "  icon        Generate app icon from assets"
 	@echo "  clean       Remove build artifacts"
 	@echo ""
@@ -49,10 +50,13 @@ run: package
 	@open THORApp.app
 
 package:
-	SIGNING_MODE=adhoc Scripts/package_app.sh release
+	SIGNING_MODE=adhoc Scripts/release/package_app.sh release
+
+dist:
+	SIGNING_MODE=adhoc Scripts/release/create_dist.sh release
 
 icon:
-	Scripts/generate_icon.sh
+	Scripts/dev/generate_icon.sh
 
 # Docker
 docker-up:
@@ -88,4 +92,4 @@ stats:
 # Clean
 clean:
 	swift package clean
-	rm -rf THORApp.app .build/THOR.iconset
+	rm -rf THORApp.app .build/THOR.iconset dist

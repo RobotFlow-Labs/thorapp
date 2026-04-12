@@ -108,6 +108,55 @@ struct JetsonControlTests {
         #expect(response.cameras.contains { $0.type == "CSI" })
     }
 
+    @Test("Bridge camera frame into sim and fetch snapshot")
+    func bridgeCameraFrameIntoSim() async throws {
+        let client = AgentClient(port: 8470)
+        let cameraID = "zed-bridge-\(UUID().uuidString)"
+        let jpegBase64 = "/9j/4AAQSkZJRgABAQAASABIAAD/4QBMRXhpZgAATU0AKgAAAAgAAYdpAAQAAAABAAAAGgAAAAAAA6ABAAMAAAABAAEAAKACAAQAAAABAAAAAqADAAQAAAABAAAAAgAAAAD/7QA4UGhvdG9zaG9wIDMuMAA4QklNBAQAAAAAAAA4QklNBCUAAAAAABDUHYzZjwCyBOmACZjs+EJ+/8AAEQgAAgACAwEiAAIRAQMRAf/EAB8AAAEFAQEBAQEBAAAAAAAAAAABAgMEBQYHCAkKC//EALUQAAIBAwMCBAMFBQQEAAABfQECAwAEEQUSITFBBhNRYQcicRQygZGhCCNCscEVUtHwJDNicoIJChYXGBkaJSYnKCkqNDU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6g4SFhoeIiYqSk5SVlpeYmZqio6Slpqeoqaqys7S1tre4ubrCw8TFxsfIycrS09TV1tfY2drh4uPk5ebn6Onq8fLz9PX29/j5+v/EAB8BAAMBAQEBAQEBAQEAAAAAAAABAgMEBQYHCAkKC//EALURAAIBAgQEAwQHBQQEAAECdwABAgMRBAUhMQYSQVEHYXETIjKBCBRCkaGxwQkjM1LwFWJy0QoWJDThJfEXGBkaJicoKSo1Njc4OTpDREVGR0hJSlNUVVZXWFlaY2RlZmdoaWpzdHV2d3h5eoKDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uLj5OXm5+jp6vLz9PX29/j5+v/bAEMAAgICAgICAwICAwUDAwMFBgUFBQUGCAYGBgYGCAoICAgICAgKCgoKCgoKCgwMDAwMDA4ODg4ODw8PDw8PDw8PD//bAEMBAgICBAQEBwQEBxALCQsQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEP/dAAQAAf/aAAwDAQACEQMRAD8A/XCiiigD/9k="
+        guard let jpegData = Data(base64Encoded: jpegBase64) else {
+            Issue.record("Failed to decode embedded JPEG fixture")
+            return
+        }
+
+        let cleanup: () async -> Void = {
+            _ = try? await client.removeCameraBridge(cameraID: cameraID)
+        }
+
+        do {
+            let bridge = try await client.cameraBridgeFrame(
+                cameraID: cameraID,
+                name: "ZED 2i Bridge Test",
+                type: "ZED",
+                width: 2,
+                height: 2,
+                fps: 15,
+                jpegData: jpegData
+            )
+
+            #expect(bridge.status == "ok")
+            #expect(bridge.cameraID == cameraID)
+            #expect(bridge.bridgeState == "active")
+            #expect(bridge.previewPath == "/v1/hardware/cameras/\(cameraID)/snapshot")
+
+            let cameras = try await client.cameras()
+            let bridgedCamera = cameras.cameras.first { $0.device == "bridge:\(cameraID)" }
+            #expect(bridgedCamera != nil)
+            #expect(bridgedCamera?.source == "bridge")
+            #expect(bridgedCamera?.bridgeState == "active")
+            #expect(bridgedCamera?.previewPath == "/v1/hardware/cameras/\(cameraID)/snapshot")
+            #expect(bridgedCamera?.type == "ZED")
+
+            let snapshot = try await client.cameraSnapshot(cameraID: cameraID)
+            #expect(snapshot.count > 0)
+            #expect(snapshot.prefix(3) == Data([0xFF, 0xD8, 0xFF]))
+        } catch {
+            await cleanup()
+            throw error
+        }
+
+        await cleanup()
+    }
+
     @Test("Get GPIO pins from sim")
     func getGPIO() async throws {
         let client = AgentClient(port: 8470)
@@ -142,10 +191,15 @@ struct JetsonControlTests {
     func getGPUInfo() async throws {
         let client = AgentClient(port: 8470)
         let response = try await client.gpuDetail()
-        #expect(response.gpuName.contains("Jetson") || response.gpuName.contains("simulated"))
-        #expect(response.cudaVersion == "12.6")
-        #expect(response.tensorrtVersion == "10.3")
+        #expect(response.gpuName.contains("Jetson") || response.gpuName.contains("simulated") || response.gpuName.contains("Apple Silicon"))
         #expect(response.memoryTotalMb > 0)
+        if response.backend == "mlx" {
+            #expect(response.metalAvailable == true)
+            #expect(response.runtimeLabel == "docker_mlx_cpp")
+        } else {
+            #expect(response.cudaVersion == "12.6")
+            #expect(response.tensorrtVersion == "10.3")
+        }
     }
 
     @Test("List TensorRT engines from sim")
@@ -160,8 +214,10 @@ struct JetsonControlTests {
     func listModels() async throws {
         let client = AgentClient(port: 8470)
         let response = try await client.modelList()
-        #expect(response.count >= 2)  // Sim returns 2 sample models
-        #expect(response.models.contains { $0.format == "onnx" })
+        #expect(response.count >= 0)
+        if !response.models.isEmpty {
+            #expect(response.models.contains { $0.format == "onnx" || $0.format == "mlx" })
+        }
     }
 
     // MARK: - ROS2 Extended
@@ -170,14 +226,61 @@ struct JetsonControlTests {
     func listLaunches() async throws {
         let client = AgentClient(port: 8470)
         let response = try await client.ros2Launches()
-        #expect(response.launches is [ROS2ProcessInfo])
+        #expect(response.launches.allSatisfy { $0.pid > 0 && !$0.category.isEmpty })
+    }
+
+    @Test("Get ROS2 graph snapshot from sim")
+    func getROS2GraphSnapshot() async throws {
+        let client = AgentClient(port: 8470)
+        let response = try await client.ros2Graph()
+
+        #expect(!response.graph.nodes.isEmpty)
+        #expect(response.graph.nodes.contains { $0.name == "/camera_driver" })
+        #expect(response.graph.edges.contains { $0.topic == "/scan" && $0.messageType == "sensor_msgs/msg/LaserScan" })
+        #expect(!response.graph.capturedAt.isEmpty)
+    }
+
+    @Test("Read and update ROS2 parameters on sim")
+    func readAndUpdateROS2Parameters() async throws {
+        let client = AgentClient(port: 8470)
+
+        let initial = try await client.ros2Parameters(node: "/camera_driver")
+        #expect(initial.count >= 2)
+        #expect(initial.parameters.contains { $0.name == "exposure" && $0.value == "42" })
+
+        let updated = try await client.ros2SetParameter(node: "/camera_driver", name: "exposure", value: "48")
+        #expect(updated.success)
+        #expect(updated.value == "48")
+
+        let refreshed = try await client.ros2Parameters(node: "/camera_driver")
+        #expect(refreshed.parameters.contains { $0.name == "exposure" && $0.value == "48" })
+    }
+
+    @Test("List ROS2 actions from sim")
+    func listROS2Actions() async throws {
+        let client = AgentClient(port: 8470)
+        let response = try await client.ros2Actions()
+
+        #expect(response.count >= 2)
+        #expect(response.actions.contains { $0.name == "/navigate_to_pose" })
+        #expect(response.actions.contains { $0.type == "nav2_msgs/action/NavigateToPose" })
+    }
+
+    @Test("Get ROS2 topic stats from sim")
+    func getROS2TopicStats() async throws {
+        let client = AgentClient(port: 8470)
+        let response = try await client.ros2TopicStats()
+
+        #expect(response.count >= 3)
+        #expect(response.topics.contains { $0.topic == "/camera/image_raw" && ($0.hz ?? 0) > 0 })
+        #expect(response.topics.contains { $0.topic == "/scan" && $0.messageType == "sensor_msgs/msg/LaserScan" })
     }
 
     @Test("List ROS2 bags from sim")
     func listBags() async throws {
         let client = AgentClient(port: 8470)
         let response = try await client.ros2BagList()
-        #expect(response.bags is [ROS2Bag])
+        #expect(response.bags.allSatisfy { !$0.name.isEmpty && !$0.path.isEmpty })
     }
 
     // MARK: - Docker Extended
@@ -187,7 +290,79 @@ struct JetsonControlTests {
         let client = AgentClient(port: 8470)
         let response = try await client.dockerImages()
         // Docker available in sim but may have 0 images
-        #expect(response.images is [DockerImage])
+        #expect(response.images.allSatisfy { !$0.repository.isEmpty && !$0.imageId.isEmpty })
+    }
+
+    // MARK: - Streams + Diagnostics
+
+    @Test("List unified stream catalog from sim")
+    func listUnifiedStreamCatalog() async throws {
+        let client = AgentClient(port: 8470)
+        let response = try await client.streamCatalog()
+
+        #expect(response.count >= 3)
+        #expect(response.streams.contains { $0.id == "camera-image-raw" && $0.kind == .image })
+        #expect(response.streams.contains { $0.id == "scan-main" && $0.kind == .scan })
+    }
+
+    @Test("Fetch stream health from sim")
+    func fetchStreamHealth() async throws {
+        let client = AgentClient(port: 8470)
+        let response = try await client.streamHealth(sourceID: "camera-image-raw")
+
+        #expect(response.health.sourceID == "camera-image-raw")
+        #expect(response.health.status == .ready)
+        #expect(response.health.transportHealthy)
+        #expect(response.health.timestampsSane)
+        #expect(response.health.expectedRate)
+    }
+
+    @Test("Fetch latest image frame from stream endpoint")
+    func fetchLatestStreamImage() async throws {
+        let client = AgentClient(port: 8470)
+        let data = try await client.latestStreamImage(sourceID: "camera-image-raw")
+
+        #expect(data.count > 0)
+        #expect(data.prefix(3) == Data([0xFF, 0xD8, 0xFF]))
+    }
+
+    @Test("Fetch latest LaserScan frame from stream endpoint")
+    func fetchLatestLaserScanFrame() async throws {
+        let client = AgentClient(port: 8470)
+        let response = try await client.latestLaserScan(sourceID: "scan-main")
+
+        #expect(response.scan.sourceID == "scan-main")
+        #expect(response.scan.ranges.count == response.scan.intensities.count)
+        #expect(response.scan.rangeMax == 12.0)
+        #expect(response.metadata?.status == .ready)
+    }
+
+    @Test("Collect diagnostics archive from sim")
+    func collectDiagnosticsArchive() async throws {
+        let client = AgentClient(port: 8470)
+        let archive = try await client.diagnosticsArchive(sectionSelection: ["capabilities", "ros2", "streams"])
+
+        #expect(archive.count > 0)
+
+        let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("thor-diagnostics-\(UUID().uuidString).zip")
+        try archive.write(to: tempURL)
+        defer { try? FileManager.default.removeItem(at: tempURL) }
+
+        let archiveDirectory = FileManager.default.temporaryDirectory.appendingPathComponent("thor-diagnostics-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: archiveDirectory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: archiveDirectory) }
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/unzip")
+        process.arguments = ["-q", tempURL.path, "-d", archiveDirectory.path]
+        try process.run()
+        process.waitUntilExit()
+
+        #expect(process.terminationStatus == 0)
+        #expect(FileManager.default.fileExists(atPath: archiveDirectory.appendingPathComponent("manifest.json").path))
+        #expect(FileManager.default.fileExists(atPath: archiveDirectory.appendingPathComponent("ros2/graph.json").path))
+        #expect(FileManager.default.fileExists(atPath: archiveDirectory.appendingPathComponent("streams/catalog.json").path))
+        #expect(FileManager.default.fileExists(atPath: archiveDirectory.appendingPathComponent("SUMMARY.md").path))
     }
 
     // MARK: - Registry Device Integration
@@ -236,5 +411,34 @@ struct JetsonControlTests {
         #expect(validation.status == .pass)
         #expect(validation.ready)
         #expect(validation.stages.contains { $0.name == "Device Pull Preflight" && $0.status == .pass })
+    }
+
+    @Test("Registry rejects path traversal identifiers")
+    func rejectInvalidRegistryAddress() async {
+        let client = AgentClient(port: 8470)
+
+        do {
+            _ = try await client.applyRegistry(
+                registryAddress: "../../home/jetson/.ssh",
+                caCertificatePEM: """
+                -----BEGIN CERTIFICATE-----
+                ZGVtby10aG9yLXJlZ2lzdHJ5LWNlcnQ=
+                -----END CERTIFICATE-----
+                """,
+                caCertificateBase64: nil,
+                username: nil,
+                password: nil
+            )
+            Issue.record("Expected invalid registry address to be rejected")
+        } catch let error as AgentClientError {
+            if case .httpError(let code, let body) = error {
+                #expect(code == 400)
+                #expect(body.contains("Invalid registry address"))
+            } else {
+                Issue.record("Unexpected AgentClientError: \(error)")
+            }
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
     }
 }

@@ -37,7 +37,7 @@ jobs:
         run: swift test --filter "DatabaseTests|PipelineComposerTests"
 
       - name: Package .app bundle
-        run: SIGNING_MODE=adhoc Scripts/package_app.sh release
+        run: SIGNING_MODE=adhoc Scripts/release/package_app.sh release
 
       - name: Verify .app structure
         run: |

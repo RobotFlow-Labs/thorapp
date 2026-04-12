@@ -4,7 +4,6 @@ import THORShared
 struct ContentView: View {
     @Environment(AppState.self) private var appState
     @AppStorage("onboardingComplete") private var onboardingComplete = false
-    @State private var workspace: WorkspaceSelection = .devices
 
     var body: some View {
         Group {
@@ -31,28 +30,40 @@ struct ContentView: View {
                 .toolbar {
                     ToolbarItemGroup(placement: .navigation) {
                         workspaceButton(.devices, label: "Devices", systemImage: "cpu")
+                        workspaceButton(.studio, label: "Camera Studio", systemImage: "video.badge.waveform")
                         workspaceButton(.fleet, label: "Fleet", systemImage: "rectangle.3.group")
                         workspaceButton(.registries, label: "Registries", systemImage: "shippingbox.circle")
                     }
                 }
         } detail: {
-            if workspace == .fleet {
-                FleetView()
+            if appState.activeWorkspace == .studio {
+                CameraStudioView(bridge: appState.cameraBridgeService)
                     .toolbar {
                         ToolbarItem(placement: .navigation) {
                             Button {
-                                workspace = .devices
+                                appState.activeWorkspace = .devices
                             } label: {
                                 Label("Back to Devices", systemImage: "chevron.left")
                             }
                         }
                     }
-            } else if workspace == .registries {
+            } else if appState.activeWorkspace == .fleet {
+                FleetView()
+                    .toolbar {
+                        ToolbarItem(placement: .navigation) {
+                            Button {
+                                appState.activeWorkspace = .devices
+                            } label: {
+                                Label("Back to Devices", systemImage: "chevron.left")
+                            }
+                        }
+                    }
+            } else if appState.activeWorkspace == .registries {
                 RegistryWorkspaceView()
                     .toolbar {
                         ToolbarItem(placement: .navigation) {
                             Button {
-                                workspace = .devices
+                                appState.activeWorkspace = .devices
                             } label: {
                                 Label("Back to Devices", systemImage: "chevron.left")
                             }
@@ -70,18 +81,16 @@ struct ContentView: View {
 
     private func workspaceButton(_ target: WorkspaceSelection, label: String, systemImage: String) -> some View {
         Button {
-            workspace = target
+            if target == .studio {
+                appState.openCameraStudio(for: appState.selectedDevice?.id)
+            } else {
+                appState.activeWorkspace = target
+            }
         } label: {
             Label(label, systemImage: systemImage)
                 .labelStyle(.iconOnly)
-                .foregroundStyle(workspace == target ? Color.accentColor : Color.primary)
+                .foregroundStyle(appState.activeWorkspace == target ? Color.accentColor : Color.primary)
         }
         .help(label)
     }
-}
-
-private enum WorkspaceSelection: String, Sendable {
-    case devices
-    case fleet
-    case registries
 }

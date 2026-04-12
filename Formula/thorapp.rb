@@ -22,7 +22,7 @@ class Thorapp < Formula
     (libexec/"agent").install Dir["Agent/*"]
 
     # Build and install .app bundle
-    system "bash", "Scripts/package_app.sh", "release"
+    system "bash", "Scripts/release/package_app.sh", "release"
     prefix.install "THORApp.app"
   end
 

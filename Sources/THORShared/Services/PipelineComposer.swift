@@ -26,7 +26,6 @@ public struct PipelineComposer: Sendable {
         for module in modules {
             let backend = module.preferredBackend(for: platform)
             let serviceName = module.name.lowercased().replacingOccurrences(of: " ", with: "-")
-            let healthTopic = module.healthTopic ?? "/anima/\(serviceName)/health"
             let port = 8034 + modules.firstIndex(where: { $0.name == module.name })!
 
             yaml += """

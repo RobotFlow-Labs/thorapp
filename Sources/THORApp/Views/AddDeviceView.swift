@@ -249,7 +249,7 @@ struct AddDeviceView: View {
                         hostKeyFingerprint: keyInfo.fingerprint
                     )
                     try await db.writer.write { [identity] dbConn in
-                        var record = identity
+                        let record = identity
                         try record.insert(dbConn)
                     }
                 }

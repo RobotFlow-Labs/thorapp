@@ -243,6 +243,55 @@ public final class DatabaseManager: Sendable {
             }
         }
 
+        migrator.registerMigration("v5_v0_2_foundation") { db in
+            try db.create(table: "launch_profiles") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("deviceID", .integer)
+                    .references("devices", onDelete: .cascade)
+                t.column("name", .text).notNull()
+                t.column("configJSON", .text).notNull()
+                t.column("createdAt", .datetime).notNull()
+                t.column("updatedAt", .datetime).notNull()
+            }
+
+            try db.create(table: "deploy_recipes") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("name", .text).notNull()
+                t.column("recipeJSON", .text).notNull()
+                t.column("createdAt", .datetime).notNull()
+                t.column("updatedAt", .datetime).notNull()
+            }
+
+            try db.create(table: "recipe_runs") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("deviceID", .integer)
+                    .references("devices", onDelete: .cascade)
+                t.column("recipeID", .integer)
+                    .references("deploy_recipes", onDelete: .setNull)
+                t.column("status", .text).notNull()
+                t.column("logJSON", .text).notNull()
+                t.column("startedAt", .datetime).notNull()
+                t.column("finishedAt", .datetime)
+            }
+
+            try db.create(table: "diagnostic_runs") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("deviceID", .integer)
+                    .references("devices", onDelete: .cascade)
+                t.column("archivePath", .text).notNull()
+                t.column("manifestJSON", .text).notNull()
+                t.column("createdAt", .datetime).notNull()
+            }
+
+            try db.create(table: "guided_flow_progress") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("flowID", .text).notNull().unique()
+                t.column("status", .text).notNull()
+                t.column("progress", .double).notNull().defaults(to: 0)
+                t.column("updatedAt", .datetime).notNull()
+            }
+        }
+
         return migrator
     }
 

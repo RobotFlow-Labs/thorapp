@@ -46,6 +46,15 @@ Open an issue with the `enhancement` label describing:
 6. Update the README if you add user-facing features
 7. Submit a PR with a clear description
 
+### Repo Layout
+
+- Public docs live under `docs/`:
+  - `docs/setup/` for runbooks
+  - `docs/product/` for PRDs
+  - `docs/release/` for packaging and release operations
+- Script entrypoints are grouped under `Scripts/dev`, `Scripts/release`, `Scripts/setup`, and `Scripts/jetson-thor`.
+- Legacy root script paths are kept as compatibility wrappers, but new automation should use the grouped paths.
+
 ### Code Style
 
 - **Swift**: Follow Apple API Design Guidelines. Use `@Observable`, `@MainActor`, structured concurrency.
@@ -63,6 +72,16 @@ Open an issue with the `enhancement` label describing:
 5. Add a thorctl command in `Sources/THORctl/main.swift`
 6. Add integration tests in `Tests/`
 7. Update the Docker simulator if needed
+
+## Packaging
+
+For a public-release style smoke test:
+
+```bash
+make dist
+```
+
+This produces app and CLI artifacts in `dist/`.
 
 ## License
 

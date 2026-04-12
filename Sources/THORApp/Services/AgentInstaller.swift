@@ -10,63 +10,69 @@ final class AgentInstaller {
         self.appState = appState
     }
 
-    /// Install the agent on a device.
     func install(on device: Device, agentPackagePath: String? = nil) async throws -> InstallResult {
         guard let deviceID = device.id else {
             throw AgentInstallerError.noDeviceID
         }
 
+        let config = await appState.deviceConfig(for: deviceID)
+        let username = config.sshUsername
         let sshHost = device.hostname
-        let sshPort = (sshHost == "localhost" || sshHost == "127.0.0.1") ? 2222 : 22
+        let sshPort = (sshHost == "localhost" || sshHost == "127.0.0.1") ? 2222 : config.sshPort
+        let identityPath = appState.keychain.sshKeyPath(for: deviceID)
 
-        // Step 1: Check if agent is already running
-        let checkResult = try await sshExec(
-            host: sshHost, port: sshPort,
-            command: "curl -s http://127.0.0.1:8470/v1/health 2>/dev/null || echo NOT_RUNNING"
+        let healthCheck = try await sshExec(
+            host: sshHost,
+            port: sshPort,
+            username: username,
+            identityPath: identityPath,
+            command: "curl -fsS http://127.0.0.1:8470/v1/health 2>/dev/null || echo NOT_RUNNING",
+            allowFailure: true
         )
 
-        if checkResult.contains("healthy") {
+        if healthCheck.contains("\"healthy\"") || healthCheck.contains("healthy") {
             return InstallResult(status: .alreadyInstalled, message: "Agent is already running and healthy")
         }
 
-        // Step 2: Package and copy agent
-        let agentDir = "/opt/thor-agent"
-        let agentSourceDir = Bundle.main.resourcePath.map { $0 + "/Agent" }
-            ?? ProcessInfo.processInfo.environment["THOR_AGENT_DIR"]
-            ?? ""
+        let agentSourceDir = try resolveAgentSourceDirectory(overridePath: agentPackagePath)
+        let remoteUploadDir = "/tmp/thor-agent-upload"
+        let remoteInstallDir = "/opt/thor-agent"
 
-        // SCP the agent if source exists locally
-        if !agentSourceDir.isEmpty && FileManager.default.fileExists(atPath: agentSourceDir + "/main.py") {
-            try await scpCopy(
-                localPath: agentSourceDir,
-                remotePath: "/tmp/thor-agent-upload",
-                host: sshHost, port: sshPort
-            )
-            _ = try await sshExec(
-                host: sshHost, port: sshPort,
-                command: "sudo mkdir -p \(agentDir) && sudo cp -R /tmp/thor-agent-upload/* \(agentDir)/ && sudo chown -R $(whoami) \(agentDir)"
-            )
-        }
+        try await scpCopy(
+            localPath: agentSourceDir,
+            remotePath: remoteUploadDir,
+            host: sshHost,
+            port: sshPort,
+            username: username,
+            identityPath: identityPath
+        )
 
-        // Install Python dependencies
-        let installCommands = """
-        sudo mkdir -p \(agentDir) && \
-        sudo chown $(whoami) \(agentDir) && \
-        pip3 install --user fastapi 'uvicorn[standard]' psutil 2>/dev/null || \
-        pip3 install fastapi 'uvicorn[standard]' psutil && \
-        echo "INSTALL_OK"
+        let installCommand = """
+        set -euo pipefail
+        sudo mkdir -p \(shellQuoted(remoteInstallDir))
+        sudo rm -rf \(shellQuoted(remoteInstallDir))/*
+        sudo cp -R \(shellQuoted(remoteUploadDir))/. \(shellQuoted(remoteInstallDir))/
+        sudo chown -R \(shellQuoted(username)) \(shellQuoted(remoteInstallDir))
+        if ! /usr/bin/python3 -m pip --version >/dev/null 2>&1; then
+          sudo apt-get update
+          sudo apt-get install -y python3-pip
+        fi
+        /usr/bin/python3 -m pip install --user fastapi 'uvicorn[standard]' psutil
+        echo INSTALL_OK
         """
 
         let installResult = try await sshExec(
-            host: sshHost, port: sshPort,
-            command: installCommands
+            host: sshHost,
+            port: sshPort,
+            username: username,
+            identityPath: identityPath,
+            command: installCommand
         )
 
-        if !installResult.contains("INSTALL_OK") {
+        guard installResult.contains("INSTALL_OK") else {
             throw AgentInstallerError.installFailed(installResult)
         }
 
-        // Step 3: Create systemd service
         let serviceUnit = """
         [Unit]
         Description=THOR Jetson Agent
@@ -74,8 +80,9 @@ final class AgentInstaller {
 
         [Service]
         Type=simple
-        User=jetson
-        ExecStart=/usr/bin/python3 \(agentDir)/main.py
+        User=\(username)
+        WorkingDirectory=\(remoteInstallDir)
+        ExecStart=/usr/bin/python3 \(remoteInstallDir)/main.py
         Restart=always
         RestartSec=5
         Environment=THOR_AGENT_HOST=127.0.0.1
@@ -85,84 +92,162 @@ final class AgentInstaller {
         WantedBy=multi-user.target
         """
 
-        let serviceInstall = """
-        echo '\(serviceUnit)' | sudo tee /etc/systemd/system/thor-agent.service > /dev/null && \
-        sudo systemctl daemon-reload && \
-        sudo systemctl enable thor-agent && \
-        sudo systemctl start thor-agent && \
-        echo "SERVICE_OK"
+        let serviceCommand = """
+        set -euo pipefail
+        cat <<'EOF' | sudo tee /etc/systemd/system/thor-agent.service >/dev/null
+        \(serviceUnit)
+        EOF
+        sudo systemctl daemon-reload
+        sudo systemctl enable thor-agent
+        sudo systemctl restart thor-agent
+        echo SERVICE_OK
         """
 
         let serviceResult = try await sshExec(
-            host: sshHost, port: sshPort,
-            command: serviceInstall
+            host: sshHost,
+            port: sshPort,
+            username: username,
+            identityPath: identityPath,
+            command: serviceCommand
         )
 
-        if serviceResult.contains("SERVICE_OK") {
-            // Record job
-            if let db = appState.db {
-                let job = Job(deviceID: deviceID, jobType: .agentInstall, status: .success)
-                try await db.writer.write { [job] dbConn in
-                    var record = job
-                    try record.insert(dbConn)
-                }
-            }
-            return InstallResult(status: .installed, message: "Agent installed and service started")
-        } else {
+        guard serviceResult.contains("SERVICE_OK") else {
             throw AgentInstallerError.serviceFailed(serviceResult)
         }
+
+        if let db = appState.db {
+            let job = Job(deviceID: deviceID, jobType: .agentInstall, status: .success)
+            try await db.writer.write { [job] dbConn in
+                let record = job
+                try record.insert(dbConn)
+            }
+        }
+
+        return InstallResult(status: .installed, message: "Agent installed and service started")
     }
 
-    /// Check the agent version on a device.
     func checkVersion(on device: Device) async throws -> String? {
+        guard let deviceID = device.id else {
+            throw AgentInstallerError.noDeviceID
+        }
+
+        let config = await appState.deviceConfig(for: deviceID)
         let sshHost = device.hostname
-        let sshPort = (sshHost == "localhost" || sshHost == "127.0.0.1") ? 2222 : 22
+        let sshPort = (sshHost == "localhost" || sshHost == "127.0.0.1") ? 2222 : config.sshPort
+        let identityPath = appState.keychain.sshKeyPath(for: deviceID)
 
         let result = try await sshExec(
-            host: sshHost, port: sshPort,
-            command: "curl -s http://127.0.0.1:8470/v1/health 2>/dev/null | python3 -c \"import sys,json; print(json.load(sys.stdin).get('agent_version','unknown'))\" 2>/dev/null || echo unknown"
+            host: sshHost,
+            port: sshPort,
+            username: config.sshUsername,
+            identityPath: identityPath,
+            command: "curl -fsS http://127.0.0.1:8470/v1/health | /usr/bin/python3 -c \"import json,sys; print(json.load(sys.stdin).get('agent_version', 'unknown'))\"",
+            allowFailure: true
         )
+
         let version = result.trimmingCharacters(in: .whitespacesAndNewlines)
-        return version == "unknown" ? nil : version
+        return version.isEmpty || version == "unknown" ? nil : version
     }
 
-    private func scpCopy(localPath: String, remotePath: String, host: String, port: Int) async throws {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/scp")
-        process.arguments = [
+    private func resolveAgentSourceDirectory(overridePath: String?) throws -> String {
+        let candidates = [
+            overridePath,
+            Bundle.main.resourcePath.map { $0 + "/Agent" },
+            ProcessInfo.processInfo.environment["THOR_AGENT_DIR"],
+            FileManager.default.currentDirectoryPath + "/Agent",
+        ]
+
+        for candidate in candidates.compactMap({ $0 }) {
+            let mainPath = candidate + "/main.py"
+            if FileManager.default.fileExists(atPath: mainPath) {
+                return candidate
+            }
+        }
+
+        throw AgentInstallerError.agentSourceMissing
+    }
+
+    private func scpCopy(
+        localPath: String,
+        remotePath: String,
+        host: String,
+        port: Int,
+        username: String,
+        identityPath: String?
+    ) async throws {
+        var arguments = [
             "-r",
             "-o", "StrictHostKeyChecking=accept-new",
-            "-P", "\(port)",
-            localPath,
-            "jetson@\(host):\(remotePath)",
-        ]
-        try process.run()
-        process.waitUntilExit()
-        if process.terminationStatus != 0 {
-            throw AgentInstallerError.installFailed("SCP failed with exit \(process.terminationStatus)")
-        }
-    }
-
-    private func sshExec(host: String, port: Int, command: String) async throws -> String {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/ssh")
-        process.arguments = [
-            "-o", "StrictHostKeyChecking=accept-new",
             "-o", "ConnectTimeout=10",
-            "-p", "\(port)",
-            "jetson@\(host)",
-            command,
+            "-P", "\(port)",
         ]
+        if let identityPath, !identityPath.isEmpty {
+            arguments += ["-i", identityPath]
+        }
+        arguments += [localPath, "\(username)@\(host):\(remotePath)"]
 
+        let process = Process()
         let pipe = Pipe()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/scp")
+        process.arguments = arguments
         process.standardOutput = pipe
         process.standardError = pipe
 
         try process.run()
         process.waitUntilExit()
 
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        return String(data: data, encoding: .utf8) ?? ""
+        let output = String(
+            data: pipe.fileHandleForReading.readDataToEndOfFile(),
+            encoding: .utf8
+        ) ?? ""
+
+        guard process.terminationStatus == 0 else {
+            throw AgentInstallerError.installFailed(output.isEmpty ? "scp exited with \(process.terminationStatus)" : output)
+        }
+    }
+
+    private func sshExec(
+        host: String,
+        port: Int,
+        username: String,
+        identityPath: String?,
+        command: String,
+        allowFailure: Bool = false
+    ) async throws -> String {
+        var arguments = [
+            "-o", "StrictHostKeyChecking=accept-new",
+            "-o", "ConnectTimeout=10",
+            "-p", "\(port)",
+        ]
+        if let identityPath, !identityPath.isEmpty {
+            arguments += ["-i", identityPath]
+        }
+        arguments += ["\(username)@\(host)", command]
+
+        let process = Process()
+        let pipe = Pipe()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/ssh")
+        process.arguments = arguments
+        process.standardOutput = pipe
+        process.standardError = pipe
+
+        try process.run()
+        process.waitUntilExit()
+
+        let output = String(
+            data: pipe.fileHandleForReading.readDataToEndOfFile(),
+            encoding: .utf8
+        ) ?? ""
+
+        if process.terminationStatus != 0, !allowFailure {
+            throw AgentInstallerError.commandFailed(output.isEmpty ? "ssh exited with \(process.terminationStatus)" : output)
+        }
+
+        return output
+    }
+
+    private func shellQuoted(_ value: String) -> String {
+        "'" + value.replacingOccurrences(of: "'", with: "'\"'\"'") + "'"
     }
 }
 
@@ -179,14 +264,23 @@ enum InstallStatus: Sendable {
 
 enum AgentInstallerError: Error, LocalizedError {
     case noDeviceID
+    case agentSourceMissing
     case installFailed(String)
     case serviceFailed(String)
+    case commandFailed(String)
 
     var errorDescription: String? {
         switch self {
-        case .noDeviceID: "No device ID"
-        case .installFailed(let msg): "Install failed: \(msg)"
-        case .serviceFailed(let msg): "Service setup failed: \(msg)"
+        case .noDeviceID:
+            return "No device ID"
+        case .agentSourceMissing:
+            return "THOR agent sources were not found in the app bundle or local repo."
+        case .installFailed(let message):
+            return "Install failed: \(message)"
+        case .serviceFailed(let message):
+            return "Service setup failed: \(message)"
+        case .commandFailed(let message):
+            return "SSH command failed: \(message)"
         }
     }
 }

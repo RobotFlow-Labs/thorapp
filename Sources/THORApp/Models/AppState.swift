@@ -9,11 +9,18 @@ final class AppState {
     var devices: [Device] = []
     var registryProfiles: [RegistryProfile] = []
     var selectedDeviceID: Int64?
+    var activeWorkspace: WorkspaceSelection = .devices
+    var selectedDetailTab: DetailTab = .overview
+    var cameraStudioTargetDeviceID: Int64?
     var connectionStates: [Int64: ConnectionState] = [:]
+    var capabilityMatrices: [Int64: CapabilityMatrix] = [:]
+    var readinessReports: [Int64: ReadinessReport] = [:]
+    var recentEvents: [String] = []
     var isLoading = false
     var onboardingComplete = false
 
     private(set) var db: DatabaseManager?
+    let cameraBridgeService = CameraBridgeService()
     let keychain = KeychainManager()
     let sshManager = SSHSessionManager()
     let registryCertificateService = RegistryCertificateService()
@@ -59,17 +66,22 @@ final class AppState {
                 .order(RegistryProfile.Columns.displayName.asc)
                 .fetchAll(db)
         }
+
+        await refreshAllFoundationState()
     }
 
     func addDevice(_ device: Device) async throws {
         guard let db else { return }
         let savedDevice = try await db.writer.write { [device] dbConn -> Device? in
-            var record = device
+            let record = device
             try record.insert(dbConn)
             return try Device.fetchOne(dbConn, id: dbConn.lastInsertedRowID)
         }
         if let savedDevice {
             devices.append(savedDevice)
+            if let deviceID = savedDevice.id {
+                await refreshFoundationState(for: deviceID)
+            }
         }
     }
 
@@ -85,7 +97,7 @@ final class AppState {
         }
 
         let saved = try await db.writer.write { [draft] dbConn -> RegistryProfile in
-            var record = draft
+            let record = draft
             if let id = record.id, try RegistryProfile.fetchOne(dbConn, id: id) != nil {
                 try record.update(dbConn)
                 guard let updated = try RegistryProfile.fetchOne(dbConn, id: id) else {
@@ -199,6 +211,22 @@ final class AppState {
         connectionStates[deviceID]?.status ?? .unknown
     }
 
+    func openCameraStudio(for deviceID: Int64? = nil) {
+        if let deviceID {
+            selectedDeviceID = deviceID
+            cameraStudioTargetDeviceID = deviceID
+        }
+        activeWorkspace = .studio
+    }
+
+    func showDeviceHardware(deviceID: Int64? = nil) {
+        if let deviceID {
+            selectedDeviceID = deviceID
+        }
+        selectedDetailTab = .hardware
+        activeWorkspace = .devices
+    }
+
     // MARK: - Connect / Disconnect
 
     func connectDevice(_ device: Device, directPort: Int? = nil) async throws {
@@ -228,6 +256,11 @@ final class AppState {
         return try await connector.fetchMetrics(for: deviceID)
     }
 
+    func appendEvent(_ message: String) {
+        recentEvents.insert("[\(ISO8601DateFormatter().string(from: Date()))] \(message)", at: 0)
+        recentEvents = Array(recentEvents.prefix(100))
+    }
+
     // MARK: - Snapshots
 
     func latestSnapshot(for deviceID: Int64) async throws -> CompatibilitySnapshot? {
@@ -238,6 +271,15 @@ final class AppState {
                 .order(CompatibilitySnapshot.Columns.capturedAt.desc)
                 .fetchOne(dbConn)
         }
+    }
+
+    func deviceConfig(for deviceID: Int64) async -> DeviceConfig {
+        guard let db else { return DeviceConfig(deviceID: deviceID) }
+        return (try? await db.reader.read { dbConn in
+            try DeviceConfig
+                .filter(Column("deviceID") == deviceID)
+                .fetchOne(dbConn)
+        }) ?? DeviceConfig(deviceID: deviceID)
     }
 
     private func registryDeviceClient(for deviceID: Int64) throws -> AgentClient {

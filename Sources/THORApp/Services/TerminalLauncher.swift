@@ -32,9 +32,15 @@ final class TerminalLauncher {
         host: String,
         port: Int,
         username: String,
+        identityPath: String? = nil,
         terminalApp: TerminalApp? = nil
     ) {
-        let sshCommand = "ssh -p \(port) \(username)@\(host)"
+        let sshCommand = commandForSSH(
+            host: host,
+            port: port,
+            username: username,
+            identityPath: identityPath
+        )
         let terminal = terminalApp ?? availableTerminals.first ?? TerminalApp(
             name: "Terminal",
             path: "/System/Applications/Utilities/Terminal.app",
@@ -49,6 +55,27 @@ final class TerminalLauncher {
         default:
             // Generic: open terminal app then run command via osascript
             openGeneric(sshCommand, app: terminal)
+        }
+    }
+
+    /// Open an arbitrary command in the user's preferred terminal.
+    static func openCommand(
+        _ command: String,
+        terminalApp: TerminalApp? = nil
+    ) {
+        let terminal = terminalApp ?? availableTerminals.first ?? TerminalApp(
+            name: "Terminal",
+            path: "/System/Applications/Utilities/Terminal.app",
+            bundleID: "com.apple.Terminal"
+        )
+
+        switch terminal.bundleID {
+        case "com.apple.Terminal":
+            openInAppleTerminal(command)
+        case "com.googlecode.iterm2":
+            openInITerm(command)
+        default:
+            openGeneric(command, app: terminal)
         }
     }
 
@@ -74,6 +101,20 @@ final class TerminalLauncher {
     }
 
     // MARK: - Private
+
+    private static func commandForSSH(
+        host: String,
+        port: Int,
+        username: String,
+        identityPath: String?
+    ) -> String {
+        var components: [String] = ["ssh", "-p", "\(port)"]
+        if let identityPath, !identityPath.isEmpty {
+            components += ["-i", shellQuoted(identityPath)]
+        }
+        components.append("\(username)@\(host)")
+        return components.joined(separator: " ")
+    }
 
     private static func openInAppleTerminal(_ command: String) {
         let script = """
@@ -121,6 +162,10 @@ final class TerminalLauncher {
                 print("[TerminalLauncher] AppleScript error: \(error)")
             }
         }
+    }
+
+    private static func shellQuoted(_ value: String) -> String {
+        "'" + value.replacingOccurrences(of: "'", with: "'\"'\"'") + "'"
     }
 }
 

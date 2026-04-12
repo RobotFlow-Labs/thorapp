@@ -234,7 +234,7 @@ final class DeviceConnector {
             try DeviceConfig
                 .filter(Column("deviceID") == config.deviceID)
                 .deleteAll(dbConn)
-            var record = config
+            let record = config
             try record.insert(dbConn)
         }
     }
@@ -253,11 +253,12 @@ final class DeviceConnector {
             agentVersion: caps.agentVersion,
             dockerVersion: caps.dockerVersion,
             ros2Presence: caps.ros2Available,
+            capabilitiesJSON: String(decoding: (try? JSONEncoder().encode(caps)) ?? Data(), as: UTF8.self),
             supportStatus: determineSupportStatus(model: caps.hardware.model)
         )
 
         try await db.writer.write { [snapshot] dbConn in
-            var record = snapshot
+            let record = snapshot
             try record.insert(dbConn)
         }
 
@@ -268,6 +269,9 @@ final class DeviceConnector {
                 try device.update(dbConn)
             }
         }
+
+        await appState.refreshFoundationState(for: deviceID)
+        appState.appendEvent("Updated capabilities for device \(deviceID)")
     }
 
     private func updateConnectionState(
@@ -291,13 +295,14 @@ final class DeviceConnector {
                 try ConnectionState
                     .filter(Column("deviceID") == deviceID)
                     .deleteAll(dbConn)
-                var record = state
+                let record = state
                 try record.insert(dbConn)
             }
         }
 
         // Update in-memory state
         appState.connectionStates[deviceID] = state
+        await appState.refreshFoundationState(for: deviceID)
     }
 
     private func determineSupportStatus(model: String) -> SupportStatus {

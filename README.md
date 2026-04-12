@@ -14,8 +14,8 @@
   <a href="https://github.com/RobotFlow-Labs/thorapp/actions"><img src="https://github.com/RobotFlow-Labs/thorapp/actions/workflows/ci.yml/badge.svg" alt="CI"/></a>
   <img src="https://img.shields.io/badge/platform-macOS%2014%2B-blue" alt="macOS 14+"/>
   <img src="https://img.shields.io/badge/swift-6.2-orange" alt="Swift 6.2"/>
-  <img src="https://img.shields.io/badge/tests-71%20passing-green" alt="71 tests"/>
-  <img src="https://img.shields.io/badge/endpoints-50-purple" alt="50 API endpoints"/>
+  <img src="https://img.shields.io/badge/tests-89%20passing-green" alt="89 tests"/>
+  <img src="https://img.shields.io/badge/endpoints-50%2B-purple" alt="50+ API endpoints"/>
   <img src="https://img.shields.io/badge/license-MIT-lightgrey" alt="MIT License"/>
 </p>
 
@@ -47,6 +47,25 @@ make run          # Package .app bundle and launch
 - macOS 14+ (Sonoma) on Apple Silicon
 - Swift 6.2+ (`xcode-select --install`)
 - Docker Desktop (for Jetson simulators — optional for real hardware)
+
+### Real AGX Thor First Boot
+
+THOR now vendors the headless Jetson AGX Thor bring-up flow instead of leaving it in private local notes:
+
+```bash
+thorctl quickstart nvidia
+Scripts/jetson-thor/thor_serial.sh uefi
+Scripts/jetson-thor/bootstrap_ssh.sh nvidia@192.168.55.1 ~/.ssh/id_ed25519.pub
+```
+
+- Repo runbook: [docs/setup/jetson-agx-thor-headless-quickstart.md](docs/setup/jetson-agx-thor-headless-quickstart.md)
+- NVIDIA reference: [Jetson AGX Thor Quick Start](https://docs.nvidia.com/jetson/agx-thor-devkit/user-guide/latest/quick_start.html)
+
+### Repository Guide
+
+- [docs/README.md](docs/README.md) indexes setup, product, and release documentation.
+- [Scripts/README.md](Scripts/README.md) explains the canonical script layout.
+- `make dist` produces release-ready app and CLI artifacts in `dist/`.
 
 ---
 
@@ -94,9 +113,10 @@ thorctl usb                 # USB devices
 thorctl exec "uname -a"     # Run any command
 thorctl watch               # Live metrics dashboard
 thorctl screenshot          # Capture screen for debugging
+thorctl quickstart nvidia   # Mac-side Thor headless first-boot guide
 ```
 
-25 commands total. Run `thorctl help` for the full list.
+Run `thorctl help` for the full list.
 
 ---
 
@@ -171,9 +191,9 @@ macOS                                    Jetson Device
 ┌──────────────────┐                    ┌──────────────────────┐
 │  THOR.app        │    SSH Tunnel      │  THOR Agent          │
 │  (SwiftUI)       │◄──────────────────►│  (Python/FastAPI)    │
-│                  │                    │  50 endpoints        │
+│                  │                    │  router-based API    │
 │  thorctl (CLI)   │    HTTP/JSON       │  10 router modules   │
-│  25 commands     │◄──────────────────►│  localhost:8470      │
+│  setup + ops     │◄──────────────────►│  localhost:8470      │
 └──────────────────┘                    │                      │
                                         │  ├ power.py          │
                                         │  ├ system.py         │
@@ -203,14 +223,23 @@ thorapp/
 │   │   ├── Models/              # 50+ response types
 │   │   ├── SSH/                 # Session manager, host key verifier
 │   │   └── Keychain/            # macOS Keychain wrapper
-│   ├── THORctl/                 # CLI (25 commands)
+│   ├── THORctl/                 # CLI
 │   └── THORCore/                # Background helper
 ├── Agent/                       # Python Jetson agent
 │   ├── main.py                  # FastAPI core
 │   ├── routers/                 # 10 endpoint modules
 │   ├── sim.py                   # Simulation state
 │   └── process_manager.py       # Background process tracking
-├── Tests/                       # 71 tests, 8 suites
+├── Scripts/
+│   ├── dev/                     # local build/run/icon helpers
+│   ├── release/                 # app packaging + release artifact generation
+│   ├── setup/                   # local installer entrypoints
+│   └── jetson-thor/             # Headless bring-up helpers for AGX Thor
+├── docs/
+│   ├── setup/                   # Public setup and first-boot runbooks
+│   ├── product/                 # Product requirement docs
+│   └── release/                 # Release and packaging guidance
+├── Tests/                       # automated Swift test suites
 ├── Docker/                      # Jetson simulator
 └── .github/workflows/           # CI/CD
 ```
@@ -225,6 +254,7 @@ make release        # Release build
 make test           # Run all 71 tests
 make test-unit      # Unit tests only (no Docker)
 make run            # Package + launch app
+make dist           # Build release artifacts into dist/
 make docker-up      # Start Jetson simulators
 make docker-down    # Stop simulators
 make install-cli    # Install thorctl to /usr/local/bin

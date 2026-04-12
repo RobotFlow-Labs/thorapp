@@ -6,6 +6,7 @@ import os
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
@@ -13,11 +14,16 @@ from fastapi.responses import JSONResponse
 from sim import get_sim_state, is_sim, set_sim_state
 
 router = APIRouter(prefix="/v1/registry", tags=["registry"])
+DOCKER_CERTS_DIR = Path("/etc/docker/certs.d")
 
 
 @router.get("/status")
 async def registry_status(registry: str, scheme: str = "https"):
     """Report Docker registry trust/auth status on the device."""
+    try:
+        registry = _validated_registry_address(registry)
+    except ValueError as error:
+        return JSONResponse(status_code=400, content={"error": str(error)})
     state = _load_registry_state(registry, scheme)
     return state
 
@@ -34,6 +40,10 @@ async def registry_apply(payload: dict):
 
     if not registry:
         return JSONResponse(status_code=400, content={"error": "registry required"})
+    try:
+        registry = _validated_registry_address(registry)
+    except ValueError as error:
+        return JSONResponse(status_code=400, content={"error": str(error)})
 
     if is_sim():
         configs = get_sim_state("registry_configs", {})
@@ -124,6 +134,10 @@ async def registry_validate(payload: dict):
 
     if not registry:
         return JSONResponse(status_code=400, content={"error": "registry required"})
+    try:
+        registry = _validated_registry_address(registry)
+    except ValueError as error:
+        return JSONResponse(status_code=400, content={"error": str(error)})
 
     if is_sim():
         configs = get_sim_state("registry_configs", {})
@@ -224,7 +238,38 @@ async def registry_validate(payload: dict):
 
 
 def _docker_certificate_path(registry: str) -> Path:
-    return Path("/etc/docker/certs.d") / registry / "ca.crt"
+    target = (DOCKER_CERTS_DIR / registry / "ca.crt").resolve()
+    base_dir = DOCKER_CERTS_DIR.resolve()
+    try:
+        target.relative_to(base_dir)
+    except ValueError as error:
+        raise ValueError("Invalid registry address. Use host[:port].") from error
+    return target
+
+
+def _validated_registry_address(registry: str) -> str:
+    registry = registry.strip()
+    if not registry:
+        raise ValueError("registry required")
+    if len(registry) > 255:
+        raise ValueError("Invalid registry address. Use host[:port].")
+    if any(char in registry for char in ["/", "\\", "\0", "\n", "\r", "\t", " "]):
+        raise ValueError("Invalid registry address. Use host[:port].")
+
+    try:
+        parsed = urlsplit(f"//{registry}")
+        port = parsed.port
+    except ValueError as error:
+        raise ValueError("Invalid registry address. Use host[:port].") from error
+
+    if parsed.path not in ("", "/") or parsed.query or parsed.fragment or parsed.username or parsed.password:
+        raise ValueError("Invalid registry address. Use host[:port].")
+    if not parsed.hostname or ".." in parsed.hostname:
+        raise ValueError("Invalid registry address. Use host[:port].")
+    if port is not None and not (1 <= port <= 65535):
+        raise ValueError("Invalid registry address. Use host[:port].")
+
+    return registry
 
 
 def _write_certificate(registry: str, certificate_pem: str, certificate_base64: str) -> None:

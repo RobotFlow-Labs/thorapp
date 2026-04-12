@@ -1,14 +1,13 @@
 # NEXT_STEPS — THOR v0.1.0 Release
 
-## Last Updated: 2026-04-04
+## Last Updated: 2026-04-12
 
-## Status: v0.1.0 release ready; OCI registry trust now spans macOS foundation plus Jetson rollout/preflight for Shenzhen showcase
+## Status: v0.1.0 release ready; v0.2 foundation is now implemented across setup, readiness, ROS2 workbench, Sensor Cockpit v1, typed deploy recipes, diagnostics bundles, and simulator-first guided flows
 
 ## Stats
 - 100+ files, 19,800+ lines
-- 76 tests, 9 suites, 0 failures
-- 53 agent endpoints, 30 CLI commands
-- Registry trust workflow now present across app, agent, CLI, database, and tests
+- 89 tests, 9 suites, 0 failures
+- Registry trust, setup wizard/doctor, readiness gating, ROS2 workbench, Sensor Cockpit, typed recipes, diagnostics bundles, and simulator parity are now present across app, agent, CLI, and tests
 
 ## v0.1.0 Release Checklist
 - [x] All features implemented and tested
@@ -31,7 +30,74 @@
 
 ## MVP Readiness: 95%
 
+## This Session — 2026-04-12
+- Added a real Jetson AGX Thor first-boot/operator path to THOR:
+  - shared `JetsonThorQuickStartSupport` for Mac-side serial port, USB tether, and SSH key detection
+  - `JetsonThorQuickStartView` embedded in onboarding and setup surfaces
+  - `thorctl quickstart` for the CLI equivalent
+  - repo-owned `Scripts/jetson-thor/` helpers and public setup runbook in `docs/setup/`
+- Hardened the real-device setup flow so THOR stops assuming the demo defaults:
+  - file transfer and terminal launch now use the saved SSH username and Keychain identity
+  - `AgentInstaller` resolves the configured username plus bundled/repo agent payloads instead of hardcoding `jetson`
+  - guided-flow progress now persists through app state/database helpers
+- Reorganized the repository for a public release surface:
+  - canonical scripts grouped under `Scripts/dev`, `Scripts/release`, `Scripts/setup`, and `Scripts/jetson-thor`
+  - compatibility wrappers kept at the legacy root script paths so existing automation does not break
+  - documentation indexed via `docs/README.md`, with PRDs moved under `docs/product/` and release guidance under `docs/release/`
+  - release packaging upgraded with `make dist`, `Scripts/release/create_dist.sh`, SHA-256 checksums, and `.github/workflows/release.yml`
+- Validated the new public-facing paths:
+  - `make dist` → `dist/THORApp-0.1.0-macos-arm64.zip`
+  - `make dist` → `dist/thorctl-0.1.0-macos-arm64.tar.gz`
+  - `swift test --filter JetsonThorQuickStartSupportTests`
+- Remaining follow-up after this session:
+  - rehearse the new guided first-boot flow on a real AGX Thor devkit
+  - remove remaining build warnings in shared/app services before public release
+  - decide whether v0.1 public releases will stay ad-hoc signed or move to notarized builds
+
 ## This Session — 2026-04-04
+- Implemented the THOR v0.2 foundation plan end-to-end:
+  - setup wizard with `Use Simulator` and `Connect Real Jetson` paths
+  - setup/doctor surface with readiness-classified remediation actions
+  - capability-driven gating and readiness board in device detail
+  - expanded ROS2 Workbench with graph, params, actions, launches, bags, and topic stats
+  - device-centric `Sensors` tab with image/LaserScan previews, stream health, snapshots, and bounded bag capture
+  - typed deploy recipes with prerequisites, rollback hints, and structured run history
+  - diagnostics bundle collection in app, agent, and CLI
+  - simulator parity for new ROS2, stream, and diagnostics routes
+- Added shared v0.2 models and persistence:
+  - `CapabilityMatrix`, `ReadinessReport`, ROS2/stream/recipe/diagnostics/guided-flow models
+  - database tables for launch profiles, deploy recipes, recipe runs, diagnostic runs, and guided flow progress
+- Added new agent routes:
+  - `/v1/ros2/graph`
+  - `/v1/ros2/parameters`
+  - `/v1/ros2/parameters/set`
+  - `/v1/ros2/actions`
+  - `/v1/ros2/action/send_goal`
+  - `/v1/ros2/topic-stats`
+  - `/v1/streams/catalog`
+  - `/v1/streams/health/{sourceID}`
+  - `/v1/streams/image/{sourceID}/latest.jpg`
+  - `/v1/streams/scan/{sourceID}/latest`
+  - `/v1/diagnostics/archive`
+- Added thorctl parity commands for the new workflow:
+  - `discover`
+  - `doctor`
+  - `ros2 graph`
+  - `ros2 params`
+  - `ros2 actions`
+  - `streams`
+  - `stream-stats`
+  - `recipe run`
+  - `diagnostics collect`
+- Validated the v0.2 baseline:
+  - `make build`
+  - `docker compose up -d --build --force-recreate`
+  - `./.build/debug/thorctl discover`
+  - `./.build/debug/thorctl doctor 8470`
+  - `./.build/debug/thorctl ros2 graph 8470`
+  - `./.build/debug/thorctl streams 8470`
+  - `./.build/debug/thorctl diagnostics collect 8470 /tmp/thor-v02-diag.zip`
+  - `make test` → 89 tests passing across 9 suites
 - Reviewed the live THOR codebase for Docker, ANIMA deploy, Keychain, settings, trust, and simulator behavior.
 - Confirmed current gaps for secure local OCI registry workflows:
   - no registry profiles
@@ -40,7 +106,7 @@
   - no Jetson-side registry trust distribution
   - no deploy-time registry preflight
 - Created a repo-grounded PRD for the Shenzhen feature track:
-  - `docs/PRD-OCI-Registry-Trust-Manager.md`
+  - `docs/product/PRD-OCI-Registry-Trust-Manager.md`
 - Implemented the first shipping slice of OCI Registry Trust Manager:
   - `registry_profiles` persistence + migration
   - Keychain-backed registry password storage
@@ -59,18 +125,54 @@
   - upgraded registry workspace with setup checklist, Jetson rollout, and preflight visibility
   - additional integration tests for device-side registry apply + preflight
 - Created a separate robotics-facing product PRD:
-  - `docs/PRD-Robot-Sensor-Cockpit.md`
+  - `docs/product/PRD-Robot-Sensor-Cockpit.md`
   - defines THOR’s next differentiation track around live sensor streaming, ROS2 bring-up, and robot readiness
+- Implemented the first Sensor Cockpit camera slice for demo use on macOS:
+  - new `Camera Studio` workspace for host camera preview and bridge controls
+  - host-to-sim camera bridge service using `AVFoundation` on macOS and new agent hardware bridge endpoints
+  - bridged camera snapshot rendering inside the device Hardware panel
+  - `thorctl camera-snapshot` for saving the latest agent-served frame
+  - Docker sim restart workflow so new agent routes are picked up during local development
+  - new end-to-end integration test covering camera bridge ingest, inventory, and snapshot fetch
+- Integrated THOR’s Docker sim with the real host-side `docker_mlx_cpp` MLX daemon:
+  - new agent helper for live `docker_mlx_cpp` discovery over `host.docker.internal`
+  - GPU endpoint now reports real Apple Silicon Metal / MLX backend status when available instead of simulated CUDA/TensorRT
+  - model inventory endpoint now surfaces actual cached MLX models from the host daemon
+  - `GPU & Models` UI and `thorctl gpu` now label MLX / Metal explicitly and stop implying TensorRT on Mac demos
+  - GPU/model integration tests updated to accept either Jetson-sim or live MLX-backed demo environments
 - Verified the implementation against Docker sims:
   - `make docker-up`
-  - `thorctl health 8470`
+  - `./.build/debug/thorctl health 8470`
   - `thorctl registry-device-apply 8470 registry.demo.local:5443 /tmp/thor-demo-registry.crt demo secret`
   - `thorctl registry-device-preflight 8470 registry.demo.local:5443 registry.demo.local:5443/hello-world:latest`
-  - `make test` → 76 tests passing across 9 suites
-  - rebuilt and relaunched local `THORApp.app` for UI inspection
+  - `docker compose restart jetson-sim jetson-orin-sim` after adding new agent routes
+  - `./.build/debug/thorctl gpu 8470` → live `docker_mlx_cpp` backend detected through the sim agent
+  - `make test` → 78 tests passing across 9 suites
+  - rebuilt, packaged, and relaunched local `THORApp.app` with `Camera Studio`
+- Tightened the Camera Studio demo path so it behaves like a real app flow instead of a detached prototype:
+  - moved camera bridge ownership into shared app state so it survives workspace switches
+  - wired `Hardware` → `Camera Studio` and `Camera Studio` → `Hardware` navigation around the selected Thor device
+  - kept simulated cameras visible even when a bridged host camera is active
+- Hardened the host MLX probe so Mac demo endpoints degrade cleanly when `docker_mlx_cpp` drops a connection:
+  - capabilities, GPU, and model endpoints now fall back instead of returning HTTP 500
+  - reran `swift test` after container restart and restored the full 78/78 passing baseline
 
 ## Current Milestone
-- M3 — OCI registry trust integrated through Jetson rollout and deploy preflight; wizard/browser hardening next
+- M4 — v0.2 robotics foundation shipped on Docker sims; real-device onboarding rehearsal, UI polish, and adapter/deeper sensor work next
+
+## v0.2 Foundation Track
+- [x] Zero-to-first-device setup wizard
+- [x] Connection doctor with staged remediation
+- [x] Capability-driven UI and readiness board
+- [x] ROS2 Workbench
+- [x] Sensor Cockpit v1
+- [x] Typed deploy recipes
+- [x] Diagnostics bundle
+- [x] Simulator parity for v0.2 routes and flows
+- [x] thorctl parity for discover, doctor, ROS2, streams, recipes, and diagnostics
+- [ ] Real Jetson enrollment rehearsal against physical hardware
+- [ ] UI copy/polish pass on setup/degraded-state guidance
+- [ ] Persist and resume guided flow progress from the app surfaces
 
 ## Shenzhen Showcase Track — 2026-04-23
 - [x] Feature PRD for OCI Registry Trust Manager
@@ -91,14 +193,23 @@
 ## Blockers / Decisions
 - Need final product decision on whether v1 device-side readiness covers Docker only or Docker plus other OCI clients used in the showcase environment.
 - Need confirmation on acceptable service disruption when applying trust to a live device runtime.
+- Direct USB passthrough of the physical ZED 2i into Docker Desktop on macOS remains a poor demo dependency; the shipped path is host capture plus sim bridge until Linux/Jetson-native ZED SDK support is added.
+- Honest Mac demo path is now split clearly:
+  - camera input is host-side and bridged into the sim
+  - AI compute is host-side Apple Silicon Metal via `docker_mlx_cpp`
 
 ## Shenzhen Feature Readiness: 65%
 
 ## Post-Shenzhen Product Track — Robotics Developer Cockpit
 - [x] Separate PRD for robotics-facing differentiation
-- [ ] Review and approve Sensor Cockpit v1 scope
-- [ ] Add live camera preview workspace
-- [ ] Add ROS2 LaserScan visualization
-- [ ] Add stream health overlays and bounded bag capture
-- [ ] Expand ROS2 UI beyond list-only inspection
-- [ ] Add robot readiness board tying sensors, ROS2, deploy, and runtime together
+- [x] Review and approve Sensor Cockpit v1 scope
+- [x] Add live camera preview workspace
+- [x] Add host-to-sim camera bridge for demoable real-camera inventory
+- [x] Add ROS2 LaserScan visualization
+- [x] Add stream health overlays and bounded bag capture
+- [x] Expand ROS2 UI beyond list-only inspection
+- [x] Add robot readiness board tying sensors, ROS2, deploy, and runtime together
+- [x] Add typed deploy recipe workflow with preflight and rollback hints
+- [x] Add diagnostics bundle collection for support and regressions
+- [ ] Run end-to-end rehearsal on a real Jetson with agent install/upgrade path
+- [ ] Harden real-hardware host-key trust and unsupported/degraded compatibility copy from first field feedback

@@ -192,7 +192,9 @@ struct FileTransferView: View {
                     port: port,
                     hostname: host
                 ) { progress in
-                    transferProgress = progress
+                    Task { @MainActor in
+                        transferProgress = progress
+                    }
                 }
             case .upload:
                 result = try await service.uploadFile(
@@ -202,7 +204,9 @@ struct FileTransferView: View {
                     port: port,
                     hostname: host
                 ) { progress in
-                    transferProgress = progress
+                    Task { @MainActor in
+                        transferProgress = progress
+                    }
                 }
             }
             lastResult = result

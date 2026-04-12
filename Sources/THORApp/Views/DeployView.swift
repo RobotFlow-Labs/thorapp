@@ -4,347 +4,565 @@ import THORShared
 struct DeployView: View {
     let device: Device
     @Environment(AppState.self) private var appState
-    @State private var profiles: [DeployProfile] = []
-    @State private var showingNewProfile = false
-    @State private var runningProfileID: String?
-    @State private var executionLog: [String] = []
+    @State private var recipes: [DeployRecipe] = []
+    @State private var selectedRecipeID: Int64?
+    @State private var variableValues: [String: String] = [:]
+    @State private var recentRuns: [RecipeRun] = []
+    @State private var currentRun: RecipeRun?
+    @State private var rollbackSuggestions: [DeployRecipeStep] = []
     @State private var errorMessage: String?
+    @State private var isLoading = false
+
+    private var deviceID: Int64 { device.id ?? 0 }
+
+    private var selectedRecipe: DeployRecipe? {
+        if let selectedRecipeID {
+            return recipes.first(where: { $0.id == selectedRecipeID })
+        }
+        return recipes.first
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            headerRow
-            if let errorMessage {
-                Text(errorMessage)
-                    .foregroundStyle(.orange)
-                    .font(.system(size: 12))
-            }
-            if profiles.isEmpty {
-                emptyState
-            } else {
-                profileList
-            }
-            if !executionLog.isEmpty {
-                executionLogView
-            }
-        }
-        .onAppear { loadBuiltinProfiles() }
-        .sheet(isPresented: $showingNewProfile) {
-            NewDeployProfileView { profile in
-                profiles.append(profile)
-            }
-        }
-    }
+        HStack(alignment: .top, spacing: 20) {
+            recipeList
+                .frame(width: 280)
 
-    private var headerRow: some View {
-        HStack {
-            Label("Deploy Profiles", systemImage: "play.rectangle")
-                .font(.system(size: 14, weight: .medium))
-            Spacer()
-            Button("New Profile", systemImage: "plus") {
-                showingNewProfile = true
-            }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
-        }
-    }
-
-    private var emptyState: some View {
-        VStack(spacing: 8) {
-            Image(systemName: "play.rectangle")
-                .font(.system(size: 24))
-                .foregroundStyle(.tertiary)
-            Text("No deploy profiles yet")
-                .font(.system(size: 13))
-                .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity, minHeight: 100)
-    }
-
-    private var profileList: some View {
-        VStack(spacing: 0) {
-            ForEach(profiles) { profile in
-                profileRow(profile)
-                if profile.id != profiles.last?.id {
-                    Divider().padding(.leading, 16)
+            VStack(alignment: .leading, spacing: 16) {
+                header
+                if let errorMessage {
+                    Text(errorMessage)
+                        .font(.system(size: 12))
+                        .foregroundStyle(.orange)
                 }
-            }
-        }
-        .background(Color(.secondarySystemFill).opacity(0.5))
-        .clipShape(.rect(cornerRadius: 10))
-    }
-
-    private func profileRow(_ profile: DeployProfile) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: profile.icon)
-                .frame(width: 20)
-                .foregroundStyle(.secondary)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(profile.name)
-                    .font(.system(size: 13, weight: .medium))
-                Text(profile.description)
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-            }
-
-            Spacer()
-
-            if profile.steps.isEmpty {
-                Text("No steps")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.tertiary)
-            } else {
-                Text("\(profile.steps.count) step\(profile.steps.count == 1 ? "" : "s")")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-            }
-
-            Button {
-                Task { await runProfile(profile) }
-            } label: {
-                if runningProfileID == profile.id {
-                    ProgressView().controlSize(.small)
+                if let recipe = selectedRecipe {
+                    recipeDetail(recipe)
+                    if let currentRun {
+                        executionLogView(run: currentRun)
+                    }
+                    if !rollbackSuggestions.isEmpty {
+                        rollbackCard
+                    }
                 } else {
-                    Image(systemName: "play.fill")
+                    ContentUnavailableView(
+                        "No Deploy Recipes",
+                        systemImage: "play.rectangle",
+                        description: Text("Deploy recipes will appear here after the foundation database is initialized.")
+                    )
                 }
+                recentRunsCard
             }
-            .buttonStyle(.borderless)
-            .disabled(runningProfileID != nil)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
+        .task {
+            await loadRecipes()
+        }
     }
 
-    private var executionLogView: some View {
-        GroupBox("Execution Log") {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 2) {
-                    ForEach(Array(executionLog.enumerated()), id: \.offset) { _, line in
-                        Text(line)
-                            .font(.system(size: 11, design: .monospaced))
-                            .foregroundStyle(logLineColor(line))
-                            .textSelection(.enabled)
+    private var recipeList: some View {
+        GroupBox("Deploy Recipes") {
+            if recipes.isEmpty {
+                Text("No deploy recipes available yet.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 8)
+            } else {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 8) {
+                        ForEach(recipes, id: \.id) { recipe in
+                            let isSelected = selectedRecipeID == recipe.id || (selectedRecipeID == nil && recipes.first?.id == recipe.id)
+                            Button {
+                                selectedRecipeID = recipe.id
+                                hydrateVariables(for: recipe)
+                            } label: {
+                                HStack(alignment: .top, spacing: 10) {
+                                    Image(systemName: recipe.icon)
+                                        .foregroundStyle(isSelected ? .white : .secondary)
+                                        .frame(width: 18)
+                                    VStack(alignment: .leading, spacing: 3) {
+                                        Text(recipe.name)
+                                            .font(.system(size: 12, weight: .medium))
+                                            .foregroundStyle(isSelected ? .white : .primary)
+                                        Text(recipe.summary)
+                                            .font(.system(size: 10))
+                                            .foregroundStyle(isSelected ? .white.opacity(0.85) : .secondary)
+                                            .lineLimit(2)
+                                    }
+                                    Spacer()
+                                }
+                                .padding(10)
+                                .background(isSelected ? Color.accentColor : Color(.secondarySystemFill).opacity(0.45))
+                                .clipShape(.rect(cornerRadius: 10))
+                            }
+                            .buttonStyle(.plain)
+                        }
                     }
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(8)
             }
-            .frame(maxHeight: 200)
         }
     }
 
-    // MARK: - Actions
+    private var header: some View {
+        HStack(alignment: .top) {
+            VStack(alignment: .leading, spacing: 4) {
+                Label("Deploy Recipes", systemImage: "play.rectangle")
+                    .font(.system(size: 15, weight: .semibold))
+                Text("Typed deploy flows with prerequisites, readiness assertions, structured run history, and rollback guidance.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button {
+                Task { await loadRecipes() }
+            } label: {
+                if isLoading {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Label("Refresh", systemImage: "arrow.clockwise")
+                }
+            }
+            .buttonStyle(.bordered)
+        }
+    }
 
-    private func runProfile(_ profile: DeployProfile) async {
-        guard let client = appState.connector?.agentClient(for: device.id ?? 0) else {
+    @ViewBuilder
+    private func recipeDetail(_ recipe: DeployRecipe) -> some View {
+        GroupBox(recipe.name) {
+            VStack(alignment: .leading, spacing: 14) {
+                Text(recipe.summary)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+
+                if !recipe.variables.isEmpty {
+                    variableEditor(recipe)
+                }
+
+                metadataRow(title: "Prerequisites", value: "\(recipe.prerequisites.count)")
+                metadataRow(title: "Steps", value: "\(recipe.steps.count)")
+                metadataRow(title: "Readiness Assertions", value: "\(recipe.readinessAssertions.count)")
+
+                stepList(title: "Plan", steps: recipe.steps)
+
+                HStack(spacing: 12) {
+                    Button {
+                        Task { await runRecipe(recipe) }
+                    } label: {
+                        if currentRun?.status == .running, currentRun?.recipeID == recipe.id {
+                            ProgressView().controlSize(.small)
+                        } else {
+                            Label("Run Recipe", systemImage: "play.fill")
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(currentRun?.status == .running)
+
+                    if !recipe.rollbackSteps.isEmpty {
+                        Text("Rollback ready: \(recipe.rollbackSteps.count) step\(recipe.rollbackSteps.count == 1 ? "" : "s")")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+        }
+    }
+
+    private func variableEditor(_ recipe: DeployRecipe) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Variables")
+                .font(.system(size: 12, weight: .medium))
+
+            ForEach(recipe.variables) { variable in
+                HStack {
+                    Text(variable.label)
+                        .font(.system(size: 12))
+                        .frame(width: 140, alignment: .leading)
+                    TextField(variable.defaultValue ?? variable.key, text: binding(for: variable))
+                        .textFieldStyle(.roundedBorder)
+                }
+            }
+        }
+    }
+
+    private func stepList(title: String, steps: [DeployRecipeStep]) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(.system(size: 12, weight: .medium))
+            ForEach(steps) { step in
+                HStack(alignment: .top, spacing: 10) {
+                    Image(systemName: icon(for: step.type))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 16)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(step.name)
+                            .font(.system(size: 12, weight: .medium))
+                        Text(step.type.rawValue)
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                        Text(step.command)
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                }
+                .padding(.vertical, 3)
+            }
+        }
+    }
+
+    private var rollbackCard: some View {
+        GroupBox("Rollback Guidance") {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("The recipe failed before completing. Review these rollback steps before retrying.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                ForEach(rollbackSuggestions) { step in
+                    Text("• \(step.name): \(step.command)")
+                        .font(.system(size: 11, design: .monospaced))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+        }
+    }
+
+    private var recentRunsCard: some View {
+        GroupBox("Recent Runs") {
+            if recentRuns.isEmpty {
+                Text("Recipe execution history will appear here after the first run.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 8)
+            } else {
+                VStack(spacing: 0) {
+                    ForEach(recentRuns) { run in
+                        HStack(alignment: .top, spacing: 12) {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(run.recipeName)
+                                    .font(.system(size: 12, weight: .medium))
+                                Text(run.startedAt.formatted(date: .abbreviated, time: .shortened))
+                                    .font(.system(size: 10))
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Text(run.status.rawValue.replacingOccurrences(of: "_", with: " ").capitalized)
+                                .font(.system(size: 10, weight: .medium))
+                                .foregroundStyle(color(for: run.status))
+                        }
+                        .padding(.vertical, 8)
+
+                        if run.id != recentRuns.last?.id {
+                            Divider()
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func executionLogView(run: RecipeRun) -> some View {
+        GroupBox("Structured Run Log") {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(run.logs) { line in
+                        Text("[\(line.timestamp)] \(line.level.uppercased()) \(line.message)")
+                            .font(.system(size: 11, design: .monospaced))
+                            .foregroundStyle(logColor(for: line.level))
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+                .padding(8)
+            }
+            .frame(maxHeight: 220)
+        }
+    }
+
+    private func metadataRow(title: String, value: String) -> some View {
+        HStack {
+            Text(title)
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+                .frame(width: 130, alignment: .leading)
+            Text(value)
+                .font(.system(size: 12, design: .monospaced))
+            Spacer()
+        }
+    }
+
+    private func loadRecipes() async {
+        isLoading = true
+        defer { isLoading = false }
+
+        do {
+            async let loadedRecipes = appState.loadDeployRecipes()
+            async let loadedRuns = appState.recentRecipeRuns(for: deviceID)
+            recipes = try await loadedRecipes
+            recentRuns = try await loadedRuns
+            if selectedRecipeID == nil {
+                selectedRecipeID = recipes.first?.id
+            }
+            if let recipe = selectedRecipe {
+                hydrateVariables(for: recipe)
+            }
+            errorMessage = nil
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private func hydrateVariables(for recipe: DeployRecipe) {
+        var next = variableValues
+        for variable in recipe.variables {
+            if next[variable.key]?.isEmpty != false {
+                next[variable.key] = variable.defaultValue ?? ""
+            }
+        }
+        variableValues = next
+    }
+
+    private func runRecipe(_ recipe: DeployRecipe) async {
+        guard let client = appState.connector?.agentClient(for: deviceID) else {
             errorMessage = "Device not connected"
             return
         }
 
-        runningProfileID = profile.id
-        executionLog = ["[\(timestamp())] Starting profile: \(profile.name)"]
+        rollbackSuggestions = []
         errorMessage = nil
 
-        // Preflight checks
-        for check in profile.preflightChecks {
-            executionLog.append("[\(timestamp())] Preflight: \(check)")
-            do {
-                let result = try await client.exec(command: check, timeout: 10)
-                if result.exitCode != 0 {
-                    executionLog.append("[\(timestamp())] PREFLIGHT FAILED: \(result.stderr)")
-                    errorMessage = "Preflight failed: \(check)"
-                    runningProfileID = nil
-                    return
-                }
-                executionLog.append("[\(timestamp())] Preflight OK")
-            } catch {
-                executionLog.append("[\(timestamp())] PREFLIGHT ERROR: \(error.localizedDescription)")
-                runningProfileID = nil
+        do {
+            let variables = try resolvedVariables(for: recipe)
+            var run = RecipeRun(
+                deviceID: deviceID,
+                recipeID: recipe.id,
+                recipeName: recipe.name,
+                status: .running,
+                logs: []
+            )
+
+            appendLog(to: &run, level: "info", "Starting recipe on \(device.displayName)")
+
+            let prerequisitesOk = try await runPrerequisites(recipe.prerequisites, variables: variables, client: client, run: &run)
+            guard prerequisitesOk else {
+                run.status = .failed
+                run.finishedAt = Date()
+                currentRun = try await appState.recordRecipeRun(run)
+                recentRuns = try await appState.recentRecipeRuns(for: deviceID)
+                rollbackSuggestions = recipe.rollbackSteps
                 return
             }
-        }
 
-        // Execute steps
-        for (index, step) in profile.steps.enumerated() {
-            executionLog.append("[\(timestamp())] Step \(index + 1)/\(profile.steps.count): \(step.name)")
-            do {
-                let result = try await client.exec(command: step.command, timeout: step.timeout)
-                if result.exitCode == 0 {
-                    executionLog.append("[\(timestamp())] Step \(index + 1) OK")
-                    if !result.stdout.isEmpty {
-                        let preview = String(result.stdout.prefix(200))
-                        executionLog.append("  → \(preview)")
-                    }
-                } else {
-                    executionLog.append("[\(timestamp())] Step \(index + 1) FAILED (exit \(result.exitCode))")
-                    if !result.stderr.isEmpty {
-                        executionLog.append("  → \(result.stderr)")
-                    }
+            var failed = false
+            for step in recipe.steps {
+                let result = try await execute(step: step, variables: variables, client: client)
+                appendLog(to: &run, level: result.success ? "success" : "error", "\(step.name): \(result.message)")
+                if !result.success {
+                    failed = true
                     if step.stopOnFailure {
-                        errorMessage = "Deploy stopped at step \(index + 1): \(step.name)"
                         break
                     }
                 }
-            } catch {
-                executionLog.append("[\(timestamp())] Step \(index + 1) ERROR: \(error.localizedDescription)")
-                if step.stopOnFailure { break }
+            }
+
+            if !failed {
+                let assertionsOk = try await runAssertions(recipe.readinessAssertions, variables: variables, client: client, run: &run)
+                failed = !assertionsOk
+            }
+
+            run.status = failed ? .failed : .success
+            run.finishedAt = Date()
+            currentRun = try await appState.recordRecipeRun(run)
+            recentRuns = try await appState.recentRecipeRuns(for: deviceID)
+            rollbackSuggestions = failed ? recipe.rollbackSteps : []
+            errorMessage = failed ? "Recipe failed. Review the structured run log and rollback guidance." : nil
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private func runPrerequisites(
+        _ prerequisites: [DeployRecipePrerequisite],
+        variables: [String: String],
+        client: AgentClient,
+        run: inout RecipeRun
+    ) async throws -> Bool {
+        guard !prerequisites.isEmpty else { return true }
+
+        for prerequisite in prerequisites {
+            let command = substitute(prerequisite.command, variables: variables)
+            let result = try await client.exec(command: command, timeout: 20)
+            let combined = [result.stdout, result.stderr].joined(separator: "\n")
+            let matched = prerequisite.expectedSubstring.map { combined.contains($0) } ?? (result.exitCode == 0)
+            appendLog(
+                to: &run,
+                level: matched ? "success" : "error",
+                "Prerequisite \(prerequisite.name): \(matched ? "passed" : "failed")"
+            )
+            if !matched || result.exitCode != 0 {
+                return false
             }
         }
 
-        executionLog.append("[\(timestamp())] Profile execution complete")
-        runningProfileID = nil
+        return true
     }
 
-    private func loadBuiltinProfiles() {
-        profiles = DeployProfile.builtins
-    }
+    private func runAssertions(
+        _ assertions: [DeployRecipeAssertion],
+        variables: [String: String],
+        client: AgentClient,
+        run: inout RecipeRun
+    ) async throws -> Bool {
+        guard !assertions.isEmpty else { return true }
 
-    private func timestamp() -> String {
-        let f = DateFormatter()
-        f.dateFormat = "HH:mm:ss"
-        return f.string(from: Date())
-    }
-
-    private func logLineColor(_ line: String) -> Color {
-        if line.contains("FAILED") || line.contains("ERROR") { return .red }
-        if line.contains("OK") { return .green }
-        if line.contains("Preflight") || line.contains("Starting") { return .secondary }
-        return .primary
-    }
-}
-
-// MARK: - Deploy Profile Model
-
-struct DeployProfile: Identifiable {
-    let id: String
-    let name: String
-    let description: String
-    let icon: String
-    let preflightChecks: [String]
-    let steps: [DeployStep]
-
-    static var builtins: [DeployProfile] {
-        [
-            DeployProfile(
-                id: "system-update",
-                name: "System Health Check",
-                description: "Check disk, memory, services, and agent status",
-                icon: "heart.text.square",
-                preflightChecks: [],
-                steps: [
-                    DeployStep(name: "Check disk space", command: "df -h /", timeout: 10),
-                    DeployStep(name: "Check memory", command: "free -h", timeout: 10),
-                    DeployStep(name: "Check uptime", command: "uptime", timeout: 10),
-                    DeployStep(name: "List running services", command: "systemctl list-units --type=service --state=running --no-pager | head -20", timeout: 10),
-                ]
-            ),
-            DeployProfile(
-                id: "docker-cleanup",
-                name: "Docker Cleanup",
-                description: "Remove stopped containers and dangling images",
-                icon: "trash",
-                preflightChecks: ["docker --version"],
-                steps: [
-                    DeployStep(name: "Remove stopped containers", command: "docker container prune -f", timeout: 30),
-                    DeployStep(name: "Remove dangling images", command: "docker image prune -f", timeout: 30),
-                    DeployStep(name: "Show disk usage", command: "docker system df", timeout: 10),
-                ]
-            ),
-            DeployProfile(
-                id: "ros2-check",
-                name: "ROS2 Environment Check",
-                description: "Verify ROS2 installation and list active nodes/topics",
-                icon: "point.3.connected.trianglepath.dotted",
-                preflightChecks: ["ros2 --version"],
-                steps: [
-                    DeployStep(name: "ROS2 version", command: "ros2 --version", timeout: 10),
-                    DeployStep(name: "List nodes", command: "ros2 node list", timeout: 10, stopOnFailure: false),
-                    DeployStep(name: "List topics", command: "ros2 topic list", timeout: 10, stopOnFailure: false),
-                    DeployStep(name: "List services", command: "ros2 service list", timeout: 10, stopOnFailure: false),
-                ]
-            ),
-        ]
-    }
-}
-
-struct DeployStep {
-    let name: String
-    let command: String
-    let timeout: Int
-    let stopOnFailure: Bool
-
-    init(name: String, command: String, timeout: Int = 30, stopOnFailure: Bool = true) {
-        self.name = name
-        self.command = command
-        self.timeout = timeout
-        self.stopOnFailure = stopOnFailure
-    }
-}
-
-// MARK: - New Profile Sheet
-
-private struct NewDeployProfileView: View {
-    @Environment(\.dismiss) private var dismiss
-    @State private var name = ""
-    @State private var description = ""
-    @State private var steps: [EditableStep] = [EditableStep()]
-    let onSave: (DeployProfile) -> Void
-
-    var body: some View {
-        VStack(spacing: 0) {
-            Form {
-                Section("Profile") {
-                    TextField("Name", text: $name)
-                    TextField("Description", text: $description)
-                }
-                Section("Steps") {
-                    ForEach($steps) { $step in
-                        HStack {
-                            TextField("Step name", text: $step.name)
-                                .frame(width: 120)
-                            TextField("Command", text: $step.command)
-                        }
-                    }
-                    Button("Add Step") {
-                        steps.append(EditableStep())
-                    }
-                }
+        for assertion in assertions {
+            let command = substitute(assertion.command, variables: variables)
+            let result = try await client.exec(command: command, timeout: 20)
+            let combined = [result.stdout, result.stderr].joined(separator: "\n")
+            let matched = assertion.expectedSubstring.map { combined.contains($0) } ?? (result.exitCode == 0)
+            appendLog(
+                to: &run,
+                level: matched ? "success" : "error",
+                "Assertion \(assertion.name): \(matched ? "passed" : "failed")"
+            )
+            if !matched || result.exitCode != 0 {
+                return false
             }
-            .formStyle(.grouped)
-
-            HStack {
-                Button("Cancel", role: .cancel) { dismiss() }
-                    .keyboardShortcut(.cancelAction)
-                Spacer()
-                Button("Save") { save() }
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(name.isEmpty || steps.allSatisfy { $0.command.isEmpty })
-            }
-            .padding(20)
         }
-        .frame(width: 500, height: 400)
+
+        return true
     }
 
-    private func save() {
-        let deploySteps = steps
-            .filter { !$0.command.isEmpty }
-            .map { DeployStep(name: $0.name.isEmpty ? $0.command : $0.name, command: $0.command) }
+    private func execute(
+        step: DeployRecipeStep,
+        variables: [String: String],
+        client: AgentClient
+    ) async throws -> (success: Bool, message: String) {
+        let command = substitute(step.command, variables: variables)
 
-        let profile = DeployProfile(
-            id: UUID().uuidString,
-            name: name,
-            description: description,
-            icon: "play.rectangle",
-            preflightChecks: [],
-            steps: deploySteps
+        switch step.type {
+        case .registryPreflight:
+            let registry = command.split(separator: "/").first.map(String.init) ?? command
+            let response = try await client.validateDeviceRegistry(
+                registryAddress: registry,
+                image: command
+            )
+            let summary = response.stages.map { "\($0.name)=\($0.status.rawValue)" }.joined(separator: ", ")
+            return (response.ready, summary.isEmpty ? response.status.rawValue : summary)
+
+        case .dockerPull:
+            let actualCommand = command.hasPrefix("docker ") ? command : "docker pull \(command)"
+            let result = try await client.exec(command: actualCommand, timeout: step.timeout)
+            return (result.exitCode == 0, commandPreview(from: result))
+
+        default:
+            let result = try await client.exec(command: command, timeout: step.timeout)
+            return (result.exitCode == 0, commandPreview(from: result))
+        }
+    }
+
+    private func resolvedVariables(for recipe: DeployRecipe) throws -> [String: String] {
+        var values: [String: String] = [:]
+        for variable in recipe.variables {
+            let value = (variableValues[variable.key] ?? variable.defaultValue ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            if variable.required && value.isEmpty {
+                throw DeployViewError.missingRequiredVariable(variable.label)
+            }
+            values[variable.key] = value
+        }
+        return values
+    }
+
+    private func substitute(_ template: String, variables: [String: String]) -> String {
+        variables.reduce(template) { partialResult, entry in
+            partialResult.replacingOccurrences(of: "{{\(entry.key)}}", with: entry.value)
+        }
+    }
+
+    private func commandPreview(from result: AgentExecResponse) -> String {
+        let trimmed = [result.stdout, result.stderr]
+            .joined(separator: "\n")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            return result.exitCode == 0 ? "completed" : "exit \(result.exitCode)"
+        }
+        return String(trimmed.prefix(200))
+    }
+
+    private func appendLog(to run: inout RecipeRun, level: String, _ message: String) {
+        run.logs.append(
+            RecipeRunLogLine(
+                timestamp: Date().formatted(date: .omitted, time: .standard),
+                level: level,
+                message: message
+            )
         )
-        onSave(profile)
-        dismiss()
+    }
+
+    private func binding(for variable: DeployRecipeVariable) -> Binding<String> {
+        Binding(
+            get: { variableValues[variable.key] ?? variable.defaultValue ?? "" },
+            set: { variableValues[variable.key] = $0 }
+        )
+    }
+
+    private func icon(for type: DeployRecipeStepType) -> String {
+        switch type {
+        case .registryPreflight:
+            "checkmark.shield"
+        case .dockerPull:
+            "arrow.down.circle"
+        case .dockerComposeUp:
+            "play.circle"
+        case .dockerComposeDown:
+            "stop.circle"
+        case .ros2LaunchStart:
+            "point.3.connected.trianglepath.dotted"
+        case .ros2LaunchStop:
+            "stop.fill"
+        case .ros2BagRecord:
+            "record.circle"
+        case .copyFiles:
+            "doc.on.doc"
+        case .modelWarmup:
+            "flame"
+        case .healthCheck:
+            "heart.text.square"
+        case .readOnlyShell:
+            "terminal"
+        }
+    }
+
+    private func logColor(for level: String) -> Color {
+        switch level {
+        case "success":
+            .green
+        case "error":
+            .red
+        default:
+            .primary
+        }
+    }
+
+    private func color(for status: RecipeRunStatus) -> Color {
+        switch status {
+        case .created, .running:
+            .orange
+        case .success:
+            .green
+        case .failed:
+            .red
+        case .rolledBack:
+            .secondary
+        }
     }
 }
 
-private struct EditableStep: Identifiable {
-    let id = UUID()
-    var name = ""
-    var command = ""
+private enum DeployViewError: LocalizedError {
+    case missingRequiredVariable(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .missingRequiredVariable(let label):
+            return "Missing required variable: \(label)"
+        }
+    }
 }

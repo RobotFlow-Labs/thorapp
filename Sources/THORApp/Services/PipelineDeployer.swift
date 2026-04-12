@@ -59,7 +59,7 @@ final class PipelineDeployer {
         var pipelineID: Int64 = 0
         if let db = appState.db {
             pipelineID = try await db.writer.write { [pipeline] dbConn -> Int64 in
-                var record = pipeline
+                let record = pipeline
                 try record.insert(dbConn)
                 return record.id ?? 0
             }
@@ -80,7 +80,7 @@ final class PipelineDeployer {
                 logSnippet: response.stdout
             )
             try await db.writer.write { [run] dbConn in
-                var record = run
+                let record = run
                 try record.insert(dbConn)
             }
         }

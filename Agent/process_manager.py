@@ -21,13 +21,20 @@ class ProcessManager:
     def __init__(self):
         self._processes: dict[int, ManagedProcess] = {}
 
-    def start(self, command: list[str], category: str, cwd: str = "/") -> ManagedProcess:
+    def start(
+        self,
+        command: list[str],
+        category: str,
+        cwd: str = "/",
+        env: Optional[dict[str, str]] = None
+    ) -> ManagedProcess:
         """Start a background process and track it."""
         proc = subprocess.Popen(
             command,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             cwd=cwd,
+            env=env,
             preexec_fn=os.setsid,  # new process group for clean kill
         )
         managed = ManagedProcess(

@@ -28,6 +28,10 @@ struct AgentClientTests {
         #expect(caps.os.distro.contains("Ubuntu"))
         #expect(caps.jetpackVersion == "6.1")
         #expect(caps.agentVersion == "0.1.0")
+        #expect(caps.ros2Available)
+        #expect(caps.installedFeatures?.contains("ros2") == true)
+        #expect(caps.supportedActions?.contains("ros2.graph") == true)
+        #expect(caps.degradedStates?.contains("ros2_missing") == false)
     }
 
     @Test("Fetch metrics from running agent")

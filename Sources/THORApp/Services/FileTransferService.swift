@@ -16,17 +16,22 @@ final class FileTransferService {
         localPath: String,
         remotePath: String,
         port: Int = 2222,
-        username: String = "jetson",
+        username: String? = nil,
         hostname: String = "localhost",
         progress: @escaping @Sendable (TransferProgress) -> Void
     ) async throws -> TransferResult {
-        let sshCmd = "ssh -p \(port) -o StrictHostKeyChecking=accept-new"
+        let (resolvedUsername, identityPath) = await sshCredentials(for: deviceID, username: username)
+        let safePort = try validatedPort(port)
+        let safeUsername = try validatedRemoteUser(resolvedUsername)
+        let safeHostname = try validatedRemoteHost(hostname)
+        let destination = try remoteDestination(username: safeUsername, hostname: safeHostname, remotePath: remotePath)
+        let sshCmd = sshTransportCommand(port: safePort, identityPath: identityPath)
 
         let args = [
             "-avz", "--progress", "--delete",
             "-e", sshCmd,
             localPath.hasSuffix("/") ? localPath : localPath + "/",
-            "\(username)@\(hostname):\(remotePath)"
+            destination
         ]
 
         progress(TransferProgress(phase: .starting, percent: 0, message: "Starting rsync..."))
@@ -50,7 +55,7 @@ final class FileTransferService {
                 errorSummary: result.exitCode == 0 ? nil : result.stderr
             )
             try await db.writer.write { [job] dbConn in
-                var record = job
+                let record = job
                 try record.insert(dbConn)
             }
         }
@@ -64,16 +69,24 @@ final class FileTransferService {
         localPath: String,
         remotePath: String,
         port: Int = 2222,
-        username: String = "jetson",
+        username: String? = nil,
         hostname: String = "localhost",
         progress: @escaping @Sendable (TransferProgress) -> Void
     ) async throws -> TransferResult {
-        let args = [
-            "-P", "\(port)",
+        let (resolvedUsername, identityPath) = await sshCredentials(for: deviceID, username: username)
+        let safePort = try validatedPort(port)
+        let safeUsername = try validatedRemoteUser(resolvedUsername)
+        let safeHostname = try validatedRemoteHost(hostname)
+        let destination = try remoteDestination(username: safeUsername, hostname: safeHostname, remotePath: remotePath)
+
+        var args = [
+            "-P", "\(safePort)",
             "-o", "StrictHostKeyChecking=accept-new",
-            localPath,
-            "\(username)@\(hostname):\(remotePath)"
         ]
+        if let identityPath, !identityPath.isEmpty {
+            args += ["-i", identityPath]
+        }
+        args += [localPath, destination]
 
         progress(TransferProgress(phase: .starting, percent: 0, message: "Uploading..."))
 
@@ -95,7 +108,7 @@ final class FileTransferService {
                 errorSummary: result.exitCode == 0 ? nil : result.stderr
             )
             try await db.writer.write { [job] dbConn in
-                var record = job
+                let record = job
                 try record.insert(dbConn)
             }
         }
@@ -109,8 +122,15 @@ final class FileTransferService {
         localPath: String,
         remotePath: String,
         port: Int = 2222,
+        username: String? = nil,
         hostname: String = "localhost"
     ) async throws -> Bool {
+        let (resolvedUsername, identityPath) = await sshCredentials(for: deviceID, username: username)
+        let safePort = try validatedPort(port)
+        let safeUsername = try validatedRemoteUser(resolvedUsername)
+        let safeHostname = try validatedRemoteHost(hostname)
+        let quotedRemotePath = try shellQuotedRemotePath(remotePath)
+
         // Compute local checksum
         let localProcess = Process()
         localProcess.executableURL = URL(fileURLWithPath: "/usr/bin/shasum")
@@ -125,12 +145,18 @@ final class FileTransferService {
         // Compute remote checksum via SSH
         let sshProcess = Process()
         sshProcess.executableURL = URL(fileURLWithPath: "/usr/bin/ssh")
-        sshProcess.arguments = [
+        var sshArguments = [
             "-o", "StrictHostKeyChecking=accept-new",
-            "-p", "\(port)",
-            "jetson@\(hostname)",
-            "sha256sum \(remotePath) 2>/dev/null | cut -d' ' -f1"
+            "-p", "\(safePort)",
         ]
+        if let identityPath, !identityPath.isEmpty {
+            sshArguments += ["-i", identityPath]
+        }
+        sshArguments += [
+            "\(safeUsername)@\(safeHostname)",
+            "sha256sum -- \(quotedRemotePath) 2>/dev/null | cut -d' ' -f1",
+        ]
+        sshProcess.arguments = sshArguments
         let remotePipe = Pipe()
         sshProcess.standardOutput = remotePipe
         try sshProcess.run()
@@ -200,6 +226,57 @@ final class FileTransferService {
             startedAt: startedAt
         )
     }
+
+    private func validatedPort(_ port: Int) throws -> Int {
+        guard (1...65_535).contains(port) else {
+            throw FileTransferServiceError.invalidPort(port)
+        }
+        return port
+    }
+
+    private func validatedRemoteUser(_ username: String) throws -> String {
+        guard username.range(of: #"^[A-Za-z0-9._-]+$"#, options: .regularExpression) != nil else {
+            throw FileTransferServiceError.invalidRemoteUser(username)
+        }
+        return username
+    }
+
+    private func validatedRemoteHost(_ hostname: String) throws -> String {
+        guard hostname.range(of: #"^[A-Za-z0-9.\-:\[\]]+$"#, options: .regularExpression) != nil else {
+            throw FileTransferServiceError.invalidRemoteHost(hostname)
+        }
+        return hostname
+    }
+
+    private func remoteDestination(username: String, hostname: String, remotePath: String) throws -> String {
+        let quotedPath = try shellQuotedRemotePath(remotePath)
+        return "\(username)@\(hostname):\(quotedPath)"
+    }
+
+    private func sshCredentials(for deviceID: Int64, username: String?) async -> (String, String?) {
+        let config = await appState.deviceConfig(for: deviceID)
+        return (username ?? config.sshUsername, appState.keychain.sshKeyPath(for: deviceID))
+    }
+
+    private func sshTransportCommand(port: Int, identityPath: String?) -> String {
+        var components = ["ssh", "-p", "\(port)", "-o", "StrictHostKeyChecking=accept-new"]
+        if let identityPath, !identityPath.isEmpty {
+            components += ["-i", shellQuotedArgument(identityPath)]
+        }
+        return components.joined(separator: " ")
+    }
+
+    private func shellQuotedRemotePath(_ remotePath: String) throws -> String {
+        guard !remotePath.isEmpty, !remotePath.contains("\0"), !remotePath.contains("\n"), !remotePath.contains("\r") else {
+            throw FileTransferServiceError.invalidRemotePath
+        }
+        return shellQuotedArgument(remotePath)
+    }
+
+    private func shellQuotedArgument(_ value: String) -> String {
+        let escaped = value.replacingOccurrences(of: "'", with: "'\\''")
+        return "'\(escaped)'"
+    }
 }
 
 // MARK: - Transfer Types
@@ -223,4 +300,24 @@ struct TransferResult: Sendable {
     let stdout: String
     let stderr: String
     let startedAt: Date
+}
+
+enum FileTransferServiceError: LocalizedError {
+    case invalidPort(Int)
+    case invalidRemoteUser(String)
+    case invalidRemoteHost(String)
+    case invalidRemotePath
+
+    var errorDescription: String? {
+        switch self {
+        case .invalidPort(let port):
+            "Invalid SSH port: \(port)"
+        case .invalidRemoteUser(let username):
+            "Invalid remote username: \(username)"
+        case .invalidRemoteHost(let hostname):
+            "Invalid remote hostname: \(hostname)"
+        case .invalidRemotePath:
+            "Invalid remote path"
+        }
+    }
 }
