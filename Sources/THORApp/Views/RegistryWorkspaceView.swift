@@ -40,9 +40,33 @@ struct RegistryWorkspaceView: View {
         }
     }
 
+    private var trimmedDisplayName: String {
+        draft.displayName.trimmed
+    }
+
+    private var trimmedHost: String {
+        draft.host.trimmed
+    }
+
+    private var trimmedUsername: String {
+        (draft.username ?? "").trimmed
+    }
+
+    private var trimmedNamespace: String {
+        draft.repositoryNamespace.trimmed
+    }
+
+    private var trimmedTestImage: String {
+        testImage.trimmed
+    }
+
+    private var hasPasswordAvailable: Bool {
+        hasStoredPassword || !passwordInput.trimmed.isEmpty
+    }
+
     private var macTrustStatus: RegistryValidationStatus {
         guard draft.scheme == .https else { return .pass }
-        guard let path = draft.caCertificatePath else { return .warning }
+        guard let path = draft.caCertificatePath else { return .pass }
         switch appState.registryCertificateService.trustState(for: URL(fileURLWithPath: path)) {
         case .trusted:
             return .pass
@@ -54,8 +78,8 @@ struct RegistryWorkspaceView: View {
     }
 
     private var credentialStatus: RegistryValidationStatus {
-        guard let username = draft.username, !username.isEmpty else { return .pass }
-        return hasStoredPassword || !passwordInput.isEmpty ? .pass : .warning
+        guard !trimmedUsername.isEmpty else { return .pass }
+        return hasPasswordAvailable ? .pass : .warning
     }
 
     private var deviceRolloutStatus: RegistryValidationStatus {
@@ -74,6 +98,255 @@ struct RegistryWorkspaceView: View {
 
     private var lastMacValidationStatus: RegistryValidationStatus {
         validationReport?.status ?? selectedProfile?.lastValidationStatus ?? .unknown
+    }
+
+    private var connectionSnapshot: RegistryWorkspaceSnapshot {
+        if draft.id == nil {
+            return .init(
+                title: "Connection",
+                detail: "Save this profile once the name and host look right.",
+                status: .warning
+            )
+        }
+
+        if trimmedUsername.isEmpty {
+            return .init(
+                title: "Connection",
+                detail: "Saved for public or anonymous registry access.",
+                status: .pass
+            )
+        }
+
+        if hasPasswordAvailable {
+            return .init(
+                title: "Connection",
+                detail: "Saved with credentials ready for validation and rollout.",
+                status: .pass
+            )
+        }
+
+        return .init(
+            title: "Connection",
+            detail: "Username is set, but a password still needs to be stored.",
+            status: .warning
+        )
+    }
+
+    private var trustSnapshot: RegistryWorkspaceSnapshot {
+        guard draft.scheme == .https else {
+            return .init(
+                title: "TLS Trust",
+                detail: "This profile uses HTTP, so no certificate trust is involved.",
+                status: .pass
+            )
+        }
+
+        guard let path = draft.caCertificatePath else {
+            return .init(
+                title: "TLS Trust",
+                detail: "Using standard macOS trust. Import a custom CA only for private registries.",
+                status: .pass
+            )
+        }
+
+        switch appState.registryCertificateService.trustState(for: URL(fileURLWithPath: path)) {
+        case .trusted:
+            return .init(
+                title: "TLS Trust",
+                detail: "Custom CA is attached and trusted on this Mac.",
+                status: .pass
+            )
+        case .untrusted(let reason):
+            return .init(
+                title: "TLS Trust",
+                detail: reason ?? "Custom CA is attached but not trusted on this Mac yet.",
+                status: .warning
+            )
+        case .missing:
+            return .init(
+                title: "TLS Trust",
+                detail: "The attached certificate file is missing from managed storage.",
+                status: .fail
+            )
+        }
+    }
+
+    private var macValidationSnapshot: RegistryWorkspaceSnapshot {
+        let detail: String
+        if let report = validationReport {
+            detail = report.summary
+        } else if let message = selectedProfile?.lastValidationMessage, !message.isEmpty {
+            detail = message
+        } else {
+            detail = "Run a Mac-side check to verify address, trust, and authentication."
+        }
+
+        return .init(
+            title: "Check on This Mac",
+            detail: detail,
+            status: lastMacValidationStatus
+        )
+    }
+
+    private var jetsonRolloutSnapshot: RegistryWorkspaceSnapshot {
+        if connectedDeviceIDs.isEmpty {
+            return .init(
+                title: "Jetsons",
+                detail: "No connected Jetsons right now. Rollout can wait until a device is online.",
+                status: .unknown
+            )
+        }
+
+        if selectedDeviceIDs.isEmpty {
+            return .init(
+                title: "Jetsons",
+                detail: "Choose one or more connected Jetsons for rollout and preflight.",
+                status: .unknown
+            )
+        }
+
+        if let failingMessage = firstJetsonIssueMessage {
+            return .init(
+                title: "Jetsons",
+                detail: failingMessage,
+                status: deviceRolloutStatus
+            )
+        }
+
+        if !deviceValidationResults.isEmpty {
+            return .init(
+                title: "Jetsons",
+                detail: "Latest preflight covered \(deviceValidationResults.count) device\(deviceValidationResults.count == 1 ? "" : "s").",
+                status: deviceRolloutStatus
+            )
+        }
+
+        if !deviceApplyResults.isEmpty {
+            return .init(
+                title: "Jetsons",
+                detail: "Profile applied to \(deviceApplyResults.count) device\(deviceApplyResults.count == 1 ? "" : "s").",
+                status: deviceRolloutStatus
+            )
+        }
+
+        return .init(
+            title: "Jetsons",
+            detail: "Apply the profile to the selected Jetsons, then run a device-side preflight.",
+            status: .unknown
+        )
+    }
+
+    private var nextActionSnapshot: RegistryWorkspaceSnapshot {
+        if trimmedDisplayName.isEmpty || trimmedHost.isEmpty {
+            return .init(
+                title: "Finish the basic fields",
+                detail: "Add a profile name and registry host so THOR knows where to connect.",
+                status: .warning
+            )
+        }
+
+        if draft.id == nil {
+            return .init(
+                title: "Save this profile",
+                detail: "Saving turns the current draft into a reusable registry profile across THOR workflows.",
+                status: .warning
+            )
+        }
+
+        if !trimmedUsername.isEmpty && !hasPasswordAvailable {
+            return .init(
+                title: "Store the password",
+                detail: "This registry needs authentication, so THOR needs a password in Keychain before it can validate or roll out the profile.",
+                status: .warning
+            )
+        }
+
+        if draft.scheme == .https, draft.caCertificatePath != nil, macTrustStatus != .pass {
+            return .init(
+                title: "Trust the imported CA",
+                detail: "The custom certificate is attached, but macOS still needs to trust it before local checks will pass cleanly.",
+                status: macTrustStatus
+            )
+        }
+
+        if lastMacValidationStatus == .unknown {
+            return .init(
+                title: "Check the registry on this Mac",
+                detail: "Run the Mac-side check once to verify reachability, TLS trust, and credentials.",
+                status: .warning
+            )
+        }
+
+        if lastMacValidationStatus == .warning || lastMacValidationStatus == .fail {
+            return .init(
+                title: "Fix the Mac-side check",
+                detail: macValidationSnapshot.detail,
+                status: lastMacValidationStatus
+            )
+        }
+
+        if connectedDeviceIDs.isEmpty {
+            return .init(
+                title: "Local setup is ready",
+                detail: "The profile looks good on this Mac. Connect a Jetson whenever you want to roll it out.",
+                status: .pass
+            )
+        }
+
+        if selectedDeviceIDs.isEmpty {
+            return .init(
+                title: "Choose Jetsons for rollout",
+                detail: "Select one or more connected devices before applying the profile.",
+                status: .warning
+            )
+        }
+
+        if deviceRolloutStatus == .unknown {
+            return .init(
+                title: "Apply and preflight on Jetsons",
+                detail: "Push the profile to the selected devices, then optionally pull a test image to confirm end-to-end access.",
+                status: .warning
+            )
+        }
+
+        if deviceRolloutStatus == .warning || deviceRolloutStatus == .fail {
+            return .init(
+                title: "Resolve Jetson rollout issues",
+                detail: jetsonRolloutSnapshot.detail,
+                status: deviceRolloutStatus
+            )
+        }
+
+        return .init(
+            title: "Ready to use",
+            detail: "This profile is in good shape for pull and deploy workflows on both your Mac and the selected Jetsons.",
+            status: .pass
+        )
+    }
+
+    private var firstJetsonIssueMessage: String? {
+        for result in deviceValidationResults.values {
+            if let stage = result.stages.first(where: { $0.status == .fail || $0.status == .warning }) {
+                return stage.message
+            }
+        }
+
+        for result in deviceApplyResults.values where !result.message.isEmpty {
+            return result.message
+        }
+
+        return nil
+    }
+
+    private var headerTitle: String {
+        draft.id == nil ? "New Registry Profile" : draft.displayName
+    }
+
+    private var headerDescription: String {
+        if draft.id == nil {
+            return "Describe how THOR should reach this registry, then verify it locally before rolling it out to Jetsons."
+        }
+        return "This saved profile powers image pull and deploy workflows without making you rebuild the setup every time."
     }
 
     var body: some View {
@@ -96,9 +369,14 @@ struct RegistryWorkspaceView: View {
 
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Label("Registries", systemImage: "shippingbox.circle")
-                    .font(.system(size: 14, weight: .semibold))
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Registry Profiles")
+                        .font(.system(size: 14, weight: .semibold))
+                    Text("Saved endpoints for pull and deploy workflows.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                }
                 Spacer()
                 Button {
                     selectedProfileID = nil
@@ -119,33 +397,25 @@ struct RegistryWorkspaceView: View {
 
             List(selection: $selectedProfileID) {
                 ForEach(appState.registryProfiles) { profile in
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(profile.displayName)
-                        Text(profile.endpointLabel)
-                            .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
-                    }
-                    .tag(profile.id)
+                    RegistrySidebarRow(profile: profile)
+                        .tag(profile.id)
                 }
             }
             .listStyle(.sidebar)
-
-            if let message = errorMessage {
-                Text(message)
-                    .font(.system(size: 11))
-                    .foregroundStyle(.orange)
-            }
         }
         .padding(16)
-        .frame(width: 260)
+        .frame(width: 300)
     }
 
     private var detail: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 header
-                setupChecklistSection
-                profileForm
+                if let errorMessage {
+                    errorBanner(message: errorMessage)
+                }
+                readinessSection
+                connectionSection
                 certificateSection
                 validationSection
                 deviceRolloutSection
@@ -156,86 +426,91 @@ struct RegistryWorkspaceView: View {
     }
 
     private var header: some View {
-        HStack(alignment: .top) {
-            VStack(alignment: .leading, spacing: 6) {
-                Text(draft.id == nil ? "New Registry Profile" : draft.displayName)
+        HStack(alignment: .top, spacing: 16) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text(headerTitle)
                     .font(.system(size: 20, weight: .semibold))
+
                 Text(draft.endpointLabel)
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
-                Text("Use this workspace to trust the registry on your Mac, apply it to Jetsons, and run a pull-style preflight before deploy.")
+
+                Text(headerDescription)
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
+
+                HStack(spacing: 8) {
+                    RegistryInfoPill(title: draft.scheme.rawValue.uppercased(), color: .blue)
+                    RegistryInfoPill(
+                        title: trimmedUsername.isEmpty ? "No Auth" : (hasPasswordAvailable ? "Auth Ready" : "Password Missing"),
+                        color: trimmedUsername.isEmpty ? .secondary : (hasPasswordAvailable ? .green : .orange)
+                    )
+                    RegistryInfoPill(
+                        title: trimmedNamespace.isEmpty ? "Repository Root" : "Namespace: \(trimmedNamespace)",
+                        color: .secondary
+                    )
+                }
             }
+
             Spacer()
-            if let selectedProfile, let id = selectedProfile.id {
-                Button("Clear Password") {
-                    appState.clearRegistryPassword(for: id)
-                    hasStoredPassword = false
-                    passwordInput = ""
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .disabled(!hasStoredPassword)
-            }
-            if let selectedProfile {
-                Button("Delete", role: .destructive) {
-                    Task { await deleteProfile(selectedProfile) }
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-            }
-            Button("Save") {
-                Task { await saveProfile() }
-            }
-            .buttonStyle(.borderedProminent)
-            .disabled(isSaving || draft.displayName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || draft.host.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-        }
-    }
 
-    private var setupChecklistSection: some View {
-        GroupBox("Setup Checklist") {
-            VStack(alignment: .leading, spacing: 10) {
-                checklistRow(
-                    "Profile saved",
-                    status: draft.id == nil ? .warning : .pass,
-                    detail: draft.id == nil ? "Save the registry profile first so THOR can reuse it." : "Registry profile is stored in THOR."
-                )
-                checklistRow(
-                    "Certificate imported",
-                    status: draft.scheme == .http ? .pass : (draft.caCertificatePath == nil ? .warning : .pass),
-                    detail: draft.scheme == .http
-                        ? "HTTP mode does not require a CA certificate."
-                        : (draft.caCertificatePath == nil ? "Import the registry CA if this is a private or lab registry." : "A registry certificate is attached to this profile.")
-                )
-                checklistRow(
-                    "Trusted on this Mac",
-                    status: macTrustStatus,
-                    detail: macTrustStatus == .pass ? "macOS trust is ready for local validation." : "Install trust into Keychain to avoid TLS failures on this Mac."
-                )
-                checklistRow(
-                    "Credentials stored",
-                    status: credentialStatus,
-                    detail: credentialStatus == .pass ? "Credential requirements are satisfied for this profile." : "Store the password in Keychain so THOR can validate and apply auth."
-                )
-                checklistRow(
-                    "Device rollout",
-                    status: deviceRolloutStatus,
-                    detail: deviceRolloutStatus == .unknown ? "Apply the profile to one or more connected Jetsons." : "Latest Jetson rollout/preflight status is shown below."
-                )
-                checklistRow(
-                    "Mac validation",
-                    status: lastMacValidationStatus,
-                    detail: lastMacValidationStatus == .unknown ? "Run Mac validation before the demo." : "Latest Mac-side registry validation is recorded."
-                )
+            HStack(spacing: 8) {
+                if let selectedProfile, let id = selectedProfile.id {
+                    Button("Clear Password") {
+                        appState.clearRegistryPassword(for: id)
+                        hasStoredPassword = false
+                        passwordInput = ""
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(!hasStoredPassword)
+                }
+
+                if let selectedProfile {
+                    Button("Delete", role: .destructive) {
+                        Task { await deleteProfile(selectedProfile) }
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
+
+                Button(isSaving ? "Saving..." : "Save") {
+                    Task { await saveProfile() }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(isSaving || trimmedDisplayName.isEmpty || trimmedHost.isEmpty)
             }
         }
     }
 
-    private var profileForm: some View {
-        GroupBox("Profile") {
+    private var readinessSection: some View {
+        GroupBox("Readiness") {
             VStack(alignment: .leading, spacing: 12) {
-                TextField("Display Name", text: $draft.displayName)
+                RegistryNextActionCard(snapshot: nextActionSnapshot)
+
+                LazyVGrid(
+                    columns: [
+                        GridItem(.flexible(), spacing: 12),
+                        GridItem(.flexible(), spacing: 12)
+                    ],
+                    spacing: 12
+                ) {
+                    RegistryReadinessCard(snapshot: connectionSnapshot)
+                    RegistryReadinessCard(snapshot: trustSnapshot)
+                    RegistryReadinessCard(snapshot: macValidationSnapshot)
+                    RegistryReadinessCard(snapshot: jetsonRolloutSnapshot)
+                }
+            }
+        }
+    }
+
+    private var connectionSection: some View {
+        GroupBox("Connection") {
+            VStack(alignment: .leading, spacing: 12) {
+                sectionIntro("Start with the address THOR should use. Add credentials only if the registry actually asks for them.")
+
+                TextField("Profile Name", text: $draft.displayName)
+
                 HStack {
                     TextField("Registry Host", text: $draft.host)
                     TextField("Port", value: $draft.port, format: .number)
@@ -247,76 +522,114 @@ struct RegistryWorkspaceView: View {
                     }
                     .frame(width: 120)
                 }
-                HStack {
-                    TextField("Username (optional)", text: Binding(
-                        get: { draft.username ?? "" },
-                        set: { draft.username = $0.isEmpty ? nil : $0 }
-                    ))
-                    SecureField(hasStoredPassword && passwordInput.isEmpty ? "Password saved in Keychain" : "Password", text: $passwordInput)
-                }
+
                 TextField("Repository Namespace (optional)", text: $draft.repositoryNamespace)
+
+                Divider()
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Authentication")
+                        .font(.system(size: 12, weight: .semibold))
+                    Text("Leave credentials empty for public registries. THOR stores passwords in Keychain, not in the profile itself.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+
+                    HStack {
+                        TextField(
+                            "Username (optional)",
+                            text: Binding(
+                                get: { draft.username ?? "" },
+                                set: { draft.username = $0.trimmed.isEmpty ? nil : $0 }
+                            )
+                        )
+
+                        SecureField(
+                            hasStoredPassword && passwordInput.isEmpty ? "Password saved in Keychain" : "Password",
+                            text: $passwordInput
+                        )
+                    }
+                }
             }
         }
     }
 
     private var certificateSection: some View {
-        GroupBox("Certificate Trust") {
+        GroupBox("TLS Trust") {
             VStack(alignment: .leading, spacing: 10) {
-                if let path = draft.caCertificatePath {
-                    trustStateRow(for: path)
-                    if let name = draft.caCertificateCommonName {
-                        infoRow("Common Name", value: name)
-                    }
-                    if let issuer = draft.caCertificateIssuer {
-                        infoRow("Issuer", value: issuer)
-                    }
-                    if let fingerprint = draft.caCertificateFingerprintSHA256 {
-                        infoRow("SHA-256", value: fingerprint)
-                    }
-                    if let expiry = draft.caCertificateExpiresAt {
-                        infoRow("Expires", value: expiry.formatted(date: .abbreviated, time: .omitted))
-                    }
+                if draft.scheme == .http {
+                    sectionIntro("This profile uses HTTP, so THOR will skip certificate trust management.")
                 } else {
-                    Text("No custom CA imported yet.")
-                        .foregroundStyle(.secondary)
-                        .font(.system(size: 12))
-                }
+                    sectionIntro("Most registries work with standard system trust. Import a custom CA only for private or lab registries.")
 
-                HStack {
-                    Button("Import Certificate") {
-                        importCertificate()
-                    }
-                    .buttonStyle(.bordered)
+                    if let path = draft.caCertificatePath {
+                        trustStateRow(for: path)
 
-                    Button(isTrusting ? "Trusting..." : "Trust on This Mac") {
-                        Task { await installTrust() }
+                        if let name = draft.caCertificateCommonName {
+                            infoRow("Common Name", value: name)
+                        }
+                        if let issuer = draft.caCertificateIssuer {
+                            infoRow("Issuer", value: issuer)
+                        }
+                        if let fingerprint = draft.caCertificateFingerprintSHA256 {
+                            infoRow("SHA-256", value: fingerprint)
+                        }
+                        if let expiry = draft.caCertificateExpiresAt {
+                            infoRow("Expires", value: expiry.formatted(date: .abbreviated, time: .omitted))
+                        }
+                    } else {
+                        Text("No custom CA attached. THOR will rely on macOS system trust for HTTPS connections.")
+                            .font(.system(size: 12))
+                            .foregroundStyle(.secondary)
                     }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(draft.caCertificatePath == nil || isTrusting)
+
+                    HStack {
+                        Button(draft.caCertificatePath == nil ? "Import Custom CA" : "Replace Custom CA") {
+                            importCertificate()
+                        }
+                        .buttonStyle(.bordered)
+
+                        Button(isTrusting ? "Trusting..." : "Trust on This Mac") {
+                            Task { await installTrust() }
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(draft.caCertificatePath == nil || isTrusting)
+                    }
                 }
             }
         }
     }
 
     private var validationSection: some View {
-        GroupBox("Mac Validation") {
+        GroupBox("Check on This Mac") {
             VStack(alignment: .leading, spacing: 10) {
+                sectionIntro("Use this check before a demo or rollout to confirm the registry address, trust, and credentials from your Mac.")
+
                 HStack {
-                    if let status = selectedProfile?.lastValidationStatus, selectedProfile?.lastValidatedAt != nil {
-                        Label(status.rawValue.capitalized, systemImage: statusIcon(status))
-                            .foregroundStyle(statusColor(status))
+                    RegistryInfoPill(
+                        title: lastMacValidationStatus == .unknown ? "Not Checked Yet" : lastMacValidationStatus.displayTitle,
+                        color: lastMacValidationStatus.tint
+                    )
+
+                    if let validatedAt = selectedProfile?.lastValidatedAt {
+                        Text(validatedAt.formatted(date: .abbreviated, time: .shortened))
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
                     }
 
                     Spacer()
 
-                    Button("Run Validation") {
+                    Button("Check Registry") {
                         Task { await runValidation() }
                     }
                     .buttonStyle(.bordered)
                     .disabled(draft.id == nil)
                 }
 
-                if let report = validationReport {
+                if draft.id == nil {
+                    Text("Save the profile first so THOR can keep the result with this registry.")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                } else if let report = validationReport {
                     ForEach(report.stages) { stage in
                         validationStageRow(name: stage.name, status: stage.status, message: stage.message)
                     }
@@ -325,7 +638,7 @@ struct RegistryWorkspaceView: View {
                         .font(.system(size: 12))
                         .foregroundStyle(.secondary)
                 } else {
-                    Text("Run validation to check trust, reachability, and authentication readiness on this Mac.")
+                    Text("No Mac-side check has been run yet.")
                         .font(.system(size: 12))
                         .foregroundStyle(.secondary)
                 }
@@ -334,11 +647,9 @@ struct RegistryWorkspaceView: View {
     }
 
     private var deviceRolloutSection: some View {
-        GroupBox("Jetson Rollout & Preflight") {
+        GroupBox("Apply to Jetsons") {
             VStack(alignment: .leading, spacing: 12) {
-                Text("Select connected Jetsons, apply registry trust/auth, then run a device-side preflight before Docker pull or ANIMA deploy.")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
+                sectionIntro("Push trust and auth settings to connected Jetsons, then optionally pull a test image to confirm device-side access.")
 
                 if appState.devices.isEmpty {
                     Text("No devices are enrolled in THOR yet.")
@@ -346,44 +657,26 @@ struct RegistryWorkspaceView: View {
                         .foregroundStyle(.secondary)
                 } else {
                     VStack(alignment: .leading, spacing: 8) {
-                        ForEach(appState.devices) { device in
+                        ForEach(appState.devices, id: \.id) { device in
                             if let id = device.id {
-                                Toggle(isOn: Binding(
-                                    get: { selectedDeviceIDs.contains(id) },
-                                    set: { isSelected in
-                                        if isSelected {
-                                            selectedDeviceIDs.insert(id)
-                                        } else {
-                                            selectedDeviceIDs.remove(id)
-                                        }
-                                    }
-                                )) {
-                                    VStack(alignment: .leading, spacing: 4) {
-                                        HStack {
-                                            Text(device.displayName)
-                                                .font(.system(size: 13, weight: .medium))
-                                            statusBadge(appState.connectionStatus(for: id).rawValue.capitalized, color: appState.connectionStatus(for: id) == .connected ? .green : .secondary)
-                                            if let validation = deviceValidationResults[id] {
-                                                statusBadge(validation.status.rawValue.capitalized, color: statusColor(validation.status))
-                                            } else if let apply = deviceApplyResults[id] {
-                                                statusBadge(apply.ready ? "Applied" : "Follow-up", color: apply.ready ? .green : .orange)
+                                Toggle(
+                                    isOn: Binding(
+                                        get: { selectedDeviceIDs.contains(id) },
+                                        set: { isSelected in
+                                            if isSelected {
+                                                selectedDeviceIDs.insert(id)
+                                            } else {
+                                                selectedDeviceIDs.remove(id)
                                             }
                                         }
-
-                                        Text(device.hostname)
-                                            .font(.system(size: 11))
-                                            .foregroundStyle(.secondary)
-
-                                        if let apply = deviceApplyResults[id], !apply.message.isEmpty {
-                                            Text(apply.message)
-                                                .font(.system(size: 11))
-                                                .foregroundStyle(.secondary)
-                                        } else if let validation = deviceValidationResults[id], let stage = validation.stages.first(where: { $0.status != .pass }) ?? validation.stages.first {
-                                            Text(stage.message)
-                                                .font(.system(size: 11))
-                                                .foregroundStyle(.secondary)
-                                        }
-                                    }
+                                    )
+                                ) {
+                                    RegistryDeviceRow(
+                                        device: device,
+                                        connectionStatus: appState.connectionStatus(for: id),
+                                        applyResult: deviceApplyResults[id],
+                                        validationResult: deviceValidationResults[id]
+                                    )
                                 }
                                 .toggleStyle(.checkbox)
                                 .disabled(appState.connectionStatus(for: id) != .connected)
@@ -393,14 +686,14 @@ struct RegistryWorkspaceView: View {
                 }
 
                 HStack {
-                    TextField("Optional test image for device preflight", text: $testImage)
-                    Button(isApplyingToDevices ? "Applying..." : "Apply to Selected Jetsons") {
+                    TextField("Optional image to pull during preflight", text: $testImage)
+                    Button(isApplyingToDevices ? "Applying..." : "Apply Profile") {
                         Task { await applyToSelectedDevices() }
                     }
                     .buttonStyle(.borderedProminent)
                     .disabled(draft.id == nil || selectedDeviceIDs.isEmpty || isApplyingToDevices)
 
-                    Button(isRunningDevicePreflight ? "Checking..." : "Run Device Preflight") {
+                    Button(isRunningDevicePreflight ? "Checking..." : "Run Preflight") {
                         Task { await runDevicePreflight() }
                     }
                     .buttonStyle(.bordered)
@@ -427,24 +720,30 @@ struct RegistryWorkspaceView: View {
         }
     }
 
-    private func checklistRow(_ title: String, status: RegistryValidationStatus, detail: String) -> some View {
+    private func sectionIntro(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 11))
+            .foregroundStyle(.secondary)
+    }
+
+    private func errorBanner(message: String) -> some View {
         HStack(alignment: .top, spacing: 10) {
-            Image(systemName: statusIcon(status))
-                .foregroundStyle(statusColor(status))
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(.system(size: 12, weight: .medium))
-                Text(detail)
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-            }
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(.orange)
+            Text(message)
+                .font(.system(size: 12))
+                .foregroundStyle(.primary)
         }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.orange.opacity(0.08))
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 
     private func validationStageRow(name: String, status: RegistryValidationStatus, message: String) -> some View {
         HStack(alignment: .top, spacing: 8) {
-            Image(systemName: statusIcon(status))
-                .foregroundStyle(statusColor(status))
+            Image(systemName: status.iconName)
+                .foregroundStyle(status.tint)
             VStack(alignment: .leading, spacing: 2) {
                 Text(name)
                     .font(.system(size: 12, weight: .medium))
@@ -455,29 +754,25 @@ struct RegistryWorkspaceView: View {
         }
     }
 
-    private func statusBadge(_ title: String, color: Color) -> some View {
-        Text(title)
-            .font(.system(size: 10, weight: .semibold))
-            .padding(.horizontal, 8)
-            .padding(.vertical, 3)
-            .background(color.opacity(0.12))
-            .foregroundStyle(color)
-            .clipShape(Capsule())
-    }
-
     private func loadDraftFromSelection() {
         guard let selectedProfile else {
+            draft = RegistryProfile(displayName: "", host: "")
             hasStoredPassword = false
+            passwordInput = ""
+            validationReport = nil
             selectedDeviceIDs = connectedDeviceIDs
             deviceApplyResults = [:]
             deviceValidationResults = [:]
+            errorMessage = nil
             return
         }
+
         draft = selectedProfile
         passwordInput = ""
         validationReport = nil
         deviceApplyResults = [:]
         deviceValidationResults = [:]
+        errorMessage = nil
         hasStoredPassword = selectedProfile.id.flatMap { appState.keychain.registryPassword(for: $0) } != nil
         selectedDeviceIDs = connectedDeviceIDs
     }
@@ -502,7 +797,13 @@ struct RegistryWorkspaceView: View {
         do {
             try await appState.removeRegistryProfile(profile)
             selectedProfileID = appState.registryProfiles.first?.id
-            draft = appState.registryProfiles.first ?? RegistryProfile(displayName: "", host: "")
+            if let first = appState.registryProfiles.first {
+                draft = first
+                hasStoredPassword = first.id.flatMap { appState.keychain.registryPassword(for: $0) } != nil
+            } else {
+                draft = RegistryProfile(displayName: "", host: "")
+                hasStoredPassword = false
+            }
             passwordInput = ""
             validationReport = nil
             deviceApplyResults = [:]
@@ -589,7 +890,7 @@ struct RegistryWorkspaceView: View {
                 let result = try await appState.validateRegistryProfile(
                     draft,
                     on: id,
-                    image: testImage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : testImage
+                    image: trimmedTestImage.isEmpty ? nil : trimmedTestImage
                 )
                 deviceValidationResults[id] = result
             } catch {
@@ -607,13 +908,13 @@ struct RegistryWorkspaceView: View {
 
         switch state {
         case .trusted:
-            label = "Trusted on This Mac"
+            label = "Custom CA Trusted on This Mac"
             color = .green
         case .untrusted:
-            label = "Not Trusted Yet"
+            label = "Custom CA Not Trusted Yet"
             color = .orange
         case .missing:
-            label = "Certificate Missing"
+            label = "Custom CA File Missing"
             color = .red
         }
 
@@ -632,9 +933,175 @@ struct RegistryWorkspaceView: View {
                 .textSelection(.enabled)
         }
     }
+}
 
-    private func statusIcon(_ status: RegistryValidationStatus) -> String {
-        switch status {
+private struct RegistryWorkspaceSnapshot {
+    let title: String
+    let detail: String
+    let status: RegistryValidationStatus
+}
+
+private struct RegistryReadinessCard: View {
+    let snapshot: RegistryWorkspaceSnapshot
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .center, spacing: 8) {
+                Image(systemName: snapshot.status.iconName)
+                    .foregroundStyle(snapshot.status.tint)
+                Text(snapshot.title)
+                    .font(.system(size: 12, weight: .semibold))
+                Spacer()
+                RegistryInfoPill(title: snapshot.status.displayTitle, color: snapshot.status.tint)
+            }
+
+            Text(snapshot.detail)
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, minHeight: 92, alignment: .topLeading)
+        .background(Color.secondary.opacity(0.06))
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+}
+
+private struct RegistryNextActionCard: View {
+    let snapshot: RegistryWorkspaceSnapshot
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: snapshot.status.iconName)
+                .foregroundStyle(snapshot.status.tint)
+                .font(.system(size: 16))
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(snapshot.title)
+                    .font(.system(size: 12, weight: .semibold))
+                Text(snapshot.detail)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+
+            RegistryInfoPill(title: snapshot.status.displayTitle, color: snapshot.status.tint)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(snapshot.status.tint.opacity(0.08))
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+}
+
+private struct RegistrySidebarRow: View {
+    let profile: RegistryProfile
+
+    private var statusTitle: String {
+        profile.lastValidationStatus == .unknown ? "Not Checked" : profile.lastValidationStatus.displayTitle
+    }
+
+    private var authLabel: String {
+        (profile.username ?? "").trimmed.isEmpty ? "No Auth" : "Auth"
+    }
+
+    private var namespaceLabel: String {
+        profile.repositoryNamespace.trimmed.isEmpty ? "Repository Root" : "Namespace"
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .center, spacing: 8) {
+                Text(profile.displayName)
+                    .font(.system(size: 12, weight: .medium))
+                    .lineLimit(1)
+                Spacer()
+                RegistryInfoPill(title: statusTitle, color: profile.lastValidationStatus.tint)
+            }
+
+            Text(profile.endpointLabel)
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+
+            HStack(spacing: 6) {
+                RegistryInfoPill(title: profile.scheme.rawValue.uppercased(), color: .blue)
+                RegistryInfoPill(title: authLabel, color: .secondary)
+                RegistryInfoPill(title: namespaceLabel, color: .secondary)
+            }
+        }
+        .padding(.vertical, 4)
+    }
+}
+
+private struct RegistryDeviceRow: View {
+    let device: Device
+    let connectionStatus: ConnectionStatus
+    let applyResult: DeviceRegistryApplyResponse?
+    let validationResult: DeviceRegistryValidationResponse?
+
+    private var deviceMessage: String? {
+        if let applyResult, !applyResult.message.isEmpty {
+            return applyResult.message
+        }
+
+        if let validationResult,
+           let stage = validationResult.stages.first(where: { $0.status == .fail || $0.status == .warning }) ?? validationResult.stages.first {
+            return stage.message
+        }
+
+        return nil
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .center, spacing: 8) {
+                Text(device.displayName)
+                    .font(.system(size: 13, weight: .medium))
+                RegistryInfoPill(
+                    title: connectionStatus.rawValue.capitalized,
+                    color: connectionStatus == .connected ? .green : .secondary
+                )
+
+                if let validationResult {
+                    RegistryInfoPill(title: validationResult.status.displayTitle, color: validationResult.status.tint)
+                } else if let applyResult {
+                    RegistryInfoPill(title: applyResult.ready ? "Applied" : "Follow-up", color: applyResult.ready ? .green : .orange)
+                }
+            }
+
+            Text(device.hostname)
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+
+            if let deviceMessage {
+                Text(deviceMessage)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+}
+
+private struct RegistryInfoPill: View {
+    let title: String
+    let color: Color
+
+    var body: some View {
+        Text(title)
+            .font(.system(size: 10, weight: .semibold))
+            .lineLimit(1)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(color.opacity(0.12))
+            .foregroundStyle(color)
+            .clipShape(Capsule())
+    }
+}
+
+private extension RegistryValidationStatus {
+    var iconName: String {
+        switch self {
         case .unknown:
             return "questionmark.circle"
         case .pass:
@@ -646,8 +1113,8 @@ struct RegistryWorkspaceView: View {
         }
     }
 
-    private func statusColor(_ status: RegistryValidationStatus) -> Color {
-        switch status {
+    var tint: Color {
+        switch self {
         case .unknown:
             return .secondary
         case .pass:
@@ -657,5 +1124,24 @@ struct RegistryWorkspaceView: View {
         case .fail:
             return .red
         }
+    }
+
+    var displayTitle: String {
+        switch self {
+        case .unknown:
+            return "Pending"
+        case .pass:
+            return "Ready"
+        case .warning:
+            return "Attention"
+        case .fail:
+            return "Failed"
+        }
+    }
+}
+
+private extension String {
+    var trimmed: String {
+        trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }

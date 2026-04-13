@@ -1,6 +1,6 @@
 # NEXT_STEPS — THOR v0.1.0 Release
 
-## Last Updated: 2026-04-12
+## Last Updated: 2026-04-13
 
 ## Status: repo-side v0.1.0 release hardening now includes a packaged in-app updater, local update-manifest support, and an installed `/Applications` app bundle; remaining blockers are external sign-off items (physical AGX Thor bring-up rehearsal, Docker-backed integration rerun when Docker is available, and a real Developer ID/notarized tag release)
 
@@ -32,6 +32,19 @@
 ## Release Confidence
 - Repo-side install/update/release/docs paths are green locally
 - External release sign-off is still pending on hardware, Docker-backed integration rerun, and Apple-notarized distribution
+
+## This Session — 2026-04-13
+- Tightened the registry profile workspace so the flow is easier to understand during real operator use:
+  - replaced the dense setup checklist with a readiness summary grid and a single next-action card
+  - clarified that custom CA import is optional for normal HTTPS registries instead of treating it like a required step
+  - split the workspace into clearer operator-facing sections for connection, TLS trust, Mac validation, and Jetson rollout
+  - upgraded the saved-profile sidebar rows with validation/auth/namespace cues so profiles are easier to scan
+  - moved transient registry errors into a visible detail-banner instead of leaving them buried in the sidebar
+- Revalidated this pass with:
+  - `make build`
+  - `make test-unit`
+- Validation still pending after this pass:
+  - rerun `make test` once Docker Desktop is available on the host
 
 ## This Session — 2026-04-12
 - Added a seventh production-hardening pass focused on application self-update and install ergonomics:
