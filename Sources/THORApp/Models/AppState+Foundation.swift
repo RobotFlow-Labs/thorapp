@@ -5,8 +5,11 @@ import THORShared
 @MainActor
 extension AppState {
     var guidedFlows: [GuidedFlow] {
-        [
-            GuidedFlow(
+        var flows: [GuidedFlow] = []
+
+        if THORWorkspacePreferences.showDockerTools() {
+            flows.append(
+                GuidedFlow(
                 id: "first-simulator-session",
                 title: "First Simulator Session",
                 summary: "Bring up the Docker sims, connect to Thor, and verify the readiness board.",
@@ -16,7 +19,11 @@ extension AppState {
                     GuidedFlowStep(title: "Connect", detail: "Enroll localhost simulator devices and connect them directly."),
                     GuidedFlowStep(title: "Inspect", detail: "Open Overview and confirm readiness for connection, Docker, ROS2, and sensors."),
                 ]
-            ),
+                )
+            )
+        }
+
+        flows.append(contentsOf: [
             GuidedFlow(
                 id: "first-real-jetson",
                 title: "First Real Jetson",
@@ -39,7 +46,9 @@ extension AppState {
                     GuidedFlowStep(title: "Inspect Output", detail: "Verify the bag appears in ROS2 Bags and Diagnostics."),
                 ]
             ),
-        ]
+        ])
+
+        return flows
     }
 
     func guidedFlowProgressMap(flowIDs: [String]) async -> [String: GuidedFlowProgressRecord] {
@@ -535,22 +544,35 @@ extension AppState {
         let caps = decodedCapabilities(from: snapshot)
         let connectionStatus = readinessStatus(from: state?.status ?? .unknown)
         let dockerReady = (snapshot?.dockerVersion != nil || caps?.dockerVersion != nil)
+        let showDockerTools = THORWorkspacePreferences.showDockerTools()
         let rosReady = snapshot?.ros2Presence == true || caps?.ros2Available == true || isSimulatorDevice(device)
         let sensorReady = rosReady || isSimulatorDevice(device)
         let registryReady = registryProfiles.isEmpty ? ReadinessStatus.warning : .ready
         let gpuStatus: ReadinessStatus = state?.status == .connected ? .ready : .unknown
         let storageStatus: ReadinessStatus = ((snapshot?.capabilitiesJSON?.isEmpty == false) || snapshot != nil) ? .ready : .unknown
 
-        let items = [
+        var items = [
             ReadinessItem(category: .connection, title: "Connection", status: connectionStatus, summary: reachabilityReason(for: state?.status ?? .unknown, device: device), detail: state?.failureReason),
             ReadinessItem(category: .agent, title: "Agent", status: snapshot != nil ? .ready : .warning, summary: snapshot == nil ? "No recent capability snapshot." : "Agent snapshot available.", detail: snapshot?.agentVersion),
             ReadinessItem(category: .ros2, title: "ROS2", status: rosReady ? .ready : .warning, summary: rosReady ? "ROS2 available." : "ROS2 missing or not detected.", detail: snapshot?.jetpackVersion),
             ReadinessItem(category: .sensors, title: "Sensors", status: sensorReady ? .ready : .warning, summary: sensorReady ? "At least one stream path is available." : "No sensor stream source detected.", detail: isSimulatorDevice(device) ? "Simulator stream catalog available." : nil),
-            ReadinessItem(category: .docker, title: "Docker", status: dockerReady ? .ready : .warning, summary: dockerReady ? "Docker runtime detected." : "Docker is unavailable.", detail: snapshot?.dockerVersion),
             ReadinessItem(category: .registry, title: "Registry / Deploy", status: registryReady, summary: registryProfiles.isEmpty ? "No registry profiles configured yet." : "Registry profiles configured.", detail: registryProfiles.first?.endpointLabel),
             ReadinessItem(category: .gpu, title: "GPU / Thermal", status: gpuStatus, summary: gpuStatus == .ready ? "GPU telemetry available when connected." : "Connect the device to inspect GPU state.", detail: caps?.gpu.name),
             ReadinessItem(category: .storage, title: "Storage", status: storageStatus, summary: storageStatus == .ready ? "Storage and disk capability data present." : "Storage data not captured yet.", detail: snapshot?.osRelease),
         ]
+
+        if showDockerTools {
+            items.insert(
+                ReadinessItem(
+                    category: .docker,
+                    title: "Docker",
+                    status: dockerReady ? .ready : .warning,
+                    summary: dockerReady ? "Docker runtime detected." : "Docker is unavailable.",
+                    detail: snapshot?.dockerVersion
+                ),
+                at: 4
+            )
+        }
 
         let overall = items.map(\.status).max(by: { $0.rank < $1.rank }) ?? .unknown
         return ReadinessReport(deviceID: device.id, overall: overall, items: items)

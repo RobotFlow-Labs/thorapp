@@ -12,7 +12,7 @@ struct GPUView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             HStack {
-                Label("GPU & Models", systemImage: "gpu")
+                Label("GPU & Models", systemImage: "memorychip")
                     .font(.system(size: 14, weight: .medium))
                 Spacer()
                 Button { Task { await loadAll() } } label: { Image(systemName: "arrow.clockwise") }

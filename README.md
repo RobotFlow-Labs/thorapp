@@ -14,7 +14,7 @@
   <a href="https://github.com/RobotFlow-Labs/thorapp/actions"><img src="https://github.com/RobotFlow-Labs/thorapp/actions/workflows/ci.yml/badge.svg" alt="CI"/></a>
   <img src="https://img.shields.io/badge/platform-macOS%2014%2B-blue" alt="macOS 14+"/>
   <img src="https://img.shields.io/badge/swift-6.2-orange" alt="Swift 6.2"/>
-  <img src="https://img.shields.io/badge/tests-94%20defined-green" alt="94 tests"/>
+  <img src="https://img.shields.io/badge/tests-114%20passing-green" alt="114 tests"/>
   <img src="https://img.shields.io/badge/endpoints-50%2B-purple" alt="50+ API endpoints"/>
   <img src="https://img.shields.io/badge/license-MIT-lightgrey" alt="MIT License"/>
 </p>
@@ -90,6 +90,7 @@ Then point the installed app at `dist/THORApp-update.json`, or set that path in 
 - Docker Desktop (required for `make test`, optional for real hardware)
 
 `make test-unit` is the fast non-Docker validation path. `make test` is the full simulator-backed suite and needs Docker Desktop running.
+If you are operating only against real Jetson hardware, THOR can hide Docker and simulator-focused UI from `Settings > General > Workspace`.
 
 ### Real AGX Thor First Boot
 
@@ -143,6 +144,9 @@ The app provides 12 feature panels organized into 4 groups:
 | Power & Thermal | ANIMA | GPU & Models | |
 | Hardware | | | |
 
+For real-device workflows, `Settings > General > Workspace` includes `Show Docker and simulator tools`, which removes the Docker tab and simulator-first guidance until you re-enable it.
+Each device tab also includes built-in operator help with `Start Here` and `Look For` guidance, plus a toolbar toggle to show or hide that help on demand.
+
 ### Manage from Terminal
 
 ```bash
@@ -171,6 +175,12 @@ Run `thorctl help` for the full list.
 
 ## Features
 
+### Workspace Modes & Guided Help
+- **Docker visibility toggle**: Hide Docker and simulator-first surfaces when you are working only with real hardware
+- **Tab help cards**: Every device tab ships with quick operator guidance
+- **Guided mode**: Open tabs with help already visible from `Settings > General > Workspace`
+- **On-demand help**: Use the `Show Help` / `Hide Help` toolbar action per tab
+
 ### Power & Thermal Management
 - **Power modes**: Switch between MAXN, 30W, 15W via nvpmodel
 - **Jetson clocks**: Lock/unlock frequencies for max performance
@@ -189,6 +199,7 @@ Run `thorctl help` for the full list.
 - View container logs
 - Image management (list, pull)
 - NVIDIA Container Runtime support
+- Optional workspace toggle hides Docker controls entirely when they are not part of the operator flow
 
 ### ROS2 Full Lifecycle
 - **Nodes**: List active nodes

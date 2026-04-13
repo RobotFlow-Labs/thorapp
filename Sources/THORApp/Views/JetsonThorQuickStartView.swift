@@ -4,8 +4,10 @@ import THORShared
 
 struct JetsonThorQuickStartView: View {
     let device: Device?
+    var showsBackButton = false
 
     @Environment(AppState.self) private var appState
+    @Environment(\.dismiss) private var dismiss
 
     @State private var snapshot = JetsonThorHostSnapshot.empty
     @State private var progressRecords: [String: GuidedFlowProgressRecord] = [:]
@@ -115,12 +117,26 @@ struct JetsonThorQuickStartView: View {
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Label("Jetson AGX Thor Headless Quick Start", systemImage: "sparkles.tv")
-                .font(.system(size: 16, weight: .semibold))
-            Text("Bring up a brand-new Thor from macOS over Debug-USB, OEM-config, and USB tether without leaving THOR’s setup flow.")
-                .font(.system(size: 12))
-                .foregroundStyle(.secondary)
+        HStack(alignment: .top, spacing: 12) {
+            VStack(alignment: .leading, spacing: 6) {
+                Label("Jetson AGX Thor Headless Quick Start", systemImage: "sparkles.tv")
+                    .font(.system(size: 16, weight: .semibold))
+                Text("Bring up a brand-new Thor from macOS over Debug-USB, OEM-config, and USB tether without leaving THOR’s setup flow.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer(minLength: 0)
+
+            if showsBackButton {
+                Button {
+                    dismiss()
+                } label: {
+                    Label("Back", systemImage: "chevron.left")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
         }
     }
 

@@ -62,6 +62,13 @@ final class AppState {
             uniqueKeysWithValues: states.map { ($0.deviceID, $0) }
         )
 
+        let configs = try await db.reader.read { db in
+            try DeviceConfig.fetchAll(db)
+        }
+        let configsByDeviceID = Dictionary(
+            uniqueKeysWithValues: configs.map { ($0.deviceID, $0) }
+        )
+
         registryProfiles = try await db.reader.read { db in
             try RegistryProfile
                 .order(RegistryProfile.Columns.displayName.asc)
@@ -69,6 +76,7 @@ final class AppState {
         }
 
         await refreshAllFoundationState()
+        await restoreLiveConnections(using: configsByDeviceID)
     }
 
     func addDevice(_ device: Device) async throws {
@@ -239,6 +247,27 @@ final class AppState {
         }
     }
 
+    func preferredDirectAgentPort(for device: Device, config: DeviceConfig? = nil) -> Int? {
+        let host = device.hostname.lowercased()
+        guard host == "localhost" || host == "127.0.0.1" else {
+            return nil
+        }
+
+        if let configuredPort = config?.agentPort, configuredPort > 0 {
+            return configuredPort
+        }
+
+        return device.displayName.localizedCaseInsensitiveContains("orin") ? 8471 : 8470
+    }
+
+    func shouldRestoreConnection(for deviceID: Int64, config: DeviceConfig?) -> Bool {
+        if connectionStates[deviceID]?.status == .connected {
+            return true
+        }
+
+        return config?.autoConnect == true
+    }
+
     func disconnectDevice(_ device: Device) async {
         guard let connector, let id = device.id else { return }
         await connector.disconnect(deviceID: id)
@@ -302,6 +331,27 @@ final class AppState {
             throw RegistryDeviceIntegrationError.deviceNotConnected
         }
         return client
+    }
+
+    private func restoreLiveConnections(using configsByDeviceID: [Int64: DeviceConfig]) async {
+        guard let connector else { return }
+
+        for device in devices {
+            guard let deviceID = device.id else { continue }
+            guard connector.agentClient(for: deviceID) == nil else { continue }
+
+            let config = configsByDeviceID[deviceID]
+            guard shouldRestoreConnection(for: deviceID, config: config) else { continue }
+
+            do {
+                try await connectDevice(
+                    device,
+                    directPort: preferredDirectAgentPort(for: device, config: config)
+                )
+            } catch {
+                appendEvent("Restore connection failed for \(device.displayName): \(error.localizedDescription)")
+            }
+        }
     }
 
     private func registryCertificateData(for profile: RegistryProfile) throws -> Data? {

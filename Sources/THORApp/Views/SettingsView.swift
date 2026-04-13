@@ -29,11 +29,27 @@ struct SettingsView: View {
 private struct GeneralSettingsView: View {
     @AppStorage("launchAtLogin") private var launchAtLogin = false
     @AppStorage("showMenuBarIcon") private var showMenuBarIcon = true
+    @AppStorage(THORWorkspacePreferences.showDockerToolsKey) private var showDockerTools = true
+    @AppStorage(THORWorkspacePreferences.showTabGuidanceKey) private var showTabGuidance = true
 
     var body: some View {
         Form {
-            Toggle("Launch at login", isOn: $launchAtLogin)
-            Toggle("Show menu bar icon", isOn: $showMenuBarIcon)
+            Section("App") {
+                Toggle("Launch at login", isOn: $launchAtLogin)
+                Toggle("Show menu bar icon", isOn: $showMenuBarIcon)
+            }
+
+            Section("Workspace") {
+                Toggle("Show Docker and simulator tools", isOn: $showDockerTools)
+                Text("Turn this off when you want THOR to focus on real-device workflows without the Docker tab or Docker readiness noise.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+
+                Toggle("Open tabs with help visible", isOn: $showTabGuidance)
+                Text("Each device tab can open with a short operator guide that explains what the page is for and what to do next.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
         }
         .formStyle(.grouped)
     }

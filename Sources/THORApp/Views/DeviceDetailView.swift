@@ -4,6 +4,8 @@ import THORShared
 struct DeviceDetailView: View {
     let device: Device
     @Environment(AppState.self) private var appState
+    @AppStorage(THORWorkspacePreferences.showDockerToolsKey) private var showDockerTools = true
+    @AppStorage(THORWorkspacePreferences.showTabGuidanceKey) private var showTabGuidanceByDefault = true
     @State private var latestSnapshot: CompatibilitySnapshot?
     @State private var metrics: AgentMetricsResponse?
     @State private var isConnecting = false
@@ -13,6 +15,7 @@ struct DeviceDetailView: View {
     @State private var metricsTimer: Task<Void, Never>?
     @State private var lastMetricsRefresh: Date?
     @State private var collectingDiagnostics = false
+    @State private var showingTabHelp = true
 
     private var isConnected: Bool {
         appState.connectionStatus(for: device.id ?? 0) == .connected
@@ -26,15 +29,36 @@ struct DeviceDetailView: View {
         appState.capabilityMatrix(for: device.id ?? 0)
     }
 
+    private var deviceTabs: [DetailTab] {
+        [.overview, .setup, .system, .power, .hardware, .sensors]
+    }
+
+    private var runtimeTabs: [DetailTab] {
+        var tabs: [DetailTab] = []
+        if showDockerTools {
+            tabs.append(.docker)
+        }
+        tabs.append(contentsOf: [.ros2, .anima])
+        return tabs
+    }
+
+    private var operationsTabs: [DetailTab] {
+        [.files, .deploy, .gpu]
+    }
+
+    private var observeTabs: [DetailTab] {
+        [.diagnostics, .logs, .history]
+    }
+
     var body: some View {
         HStack(spacing: 0) {
             // Feature sidebar — plain VStack buttons for reliable click handling
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    sidebarGroup("DEVICE", [.overview, .setup, .system, .power, .hardware, .sensors])
-                    sidebarGroup("RUNTIME", [.docker, .ros2, .anima])
-                    sidebarGroup("OPERATIONS", [.files, .deploy, .gpu])
-                    sidebarGroup("OBSERVE", [.diagnostics, .logs, .history])
+                    sidebarGroup("DEVICE", deviceTabs)
+                    sidebarGroup("RUNTIME", runtimeTabs)
+                    sidebarGroup("OPERATIONS", operationsTabs)
+                    sidebarGroup("OBSERVE", observeTabs)
                 }
                 .padding(.vertical, 8)
             }
@@ -46,6 +70,16 @@ struct DeviceDetailView: View {
             // Content
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
+                    if showingTabHelp {
+                        TabHelpCard(
+                            tab: selectedTab,
+                            onHide: { showingTabHelp = false },
+                            onHideByDefault: {
+                                showTabGuidanceByDefault = false
+                                showingTabHelp = false
+                            }
+                        )
+                    }
                     featureContent
                 }
                 .padding(20)
@@ -53,6 +87,13 @@ struct DeviceDetailView: View {
         }
         .navigationTitle(device.displayName)
         .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    showingTabHelp.toggle()
+                } label: {
+                    Label(showingTabHelp ? "Hide Help" : "Show Help", systemImage: "questionmark.circle")
+                }
+            }
             ToolbarItem(placement: .primaryAction) {
                 if isConnected {
                     Button {
@@ -77,8 +118,17 @@ struct DeviceDetailView: View {
             if isConnected {
                 await refreshMetrics()
             }
+            if showTabGuidanceByDefault {
+                showingTabHelp = true
+            }
+            if !showDockerTools, selectedTab == .docker {
+                appState.selectedDetailTab = .overview
+            }
         }
         .task(id: selectedTab) {
+            if showTabGuidanceByDefault {
+                showingTabHelp = true
+            }
             // Auto-refresh metrics when overview tab is visible
             if selectedTab == .overview && isConnected {
                 while !Task.isCancelled {
@@ -87,6 +137,11 @@ struct DeviceDetailView: View {
                         await refreshMetrics()
                     }
                 }
+            }
+        }
+        .onChange(of: showDockerTools) { _, enabled in
+            if !enabled, selectedTab == .docker {
+                appState.selectedDetailTab = .overview
             }
         }
         .destructiveConfirmation(
@@ -469,20 +524,26 @@ struct DeviceDetailView: View {
     private var capabilitiesCard: some View {
         GroupBox("Capabilities") {
             if let snap = latestSnapshot {
+                let rows: [(String, String)] =
+                    [
+                        ("Model", snap.jetsonModel),
+                        ("OS", snap.osRelease),
+                        ("JetPack", snap.jetpackVersion ?? "N/A"),
+                        ("Agent", snap.agentVersion),
+                    ] +
+                    (showDockerTools ? [("Docker", snap.dockerVersion ?? "N/A")] : []) +
+                    [
+                        ("ROS2", snap.ros2Presence ? "Detected" : "Not found"),
+                        ("Support", snap.supportStatus.rawValue.replacingOccurrences(of: "_", with: " ").capitalized),
+                    ]
+
                 VStack(spacing: 0) {
-                    infoRow("Model", value: snap.jetsonModel)
-                    Divider().padding(.leading, 16)
-                    infoRow("OS", value: snap.osRelease)
-                    Divider().padding(.leading, 16)
-                    infoRow("JetPack", value: snap.jetpackVersion ?? "N/A")
-                    Divider().padding(.leading, 16)
-                    infoRow("Agent", value: snap.agentVersion)
-                    Divider().padding(.leading, 16)
-                    infoRow("Docker", value: snap.dockerVersion ?? "N/A")
-                    Divider().padding(.leading, 16)
-                    infoRow("ROS2", value: snap.ros2Presence ? "Detected" : "Not found")
-                    Divider().padding(.leading, 16)
-                    infoRow("Support", value: snap.supportStatus.rawValue.replacingOccurrences(of: "_", with: " ").capitalized)
+                    ForEach(Array(rows.enumerated()), id: \.offset) { entry in
+                        infoRow(entry.element.0, value: entry.element.1)
+                        if entry.offset != rows.count - 1 {
+                            Divider().padding(.leading, 16)
+                        }
+                    }
                 }
             } else {
                 Text("No capability data. Connect to the device to fetch.")

@@ -2,12 +2,12 @@
 
 ## Last Updated: 2026-04-13
 
-## Status: repo-side v0.1.0 release hardening now includes a packaged in-app updater, local update-manifest support, and an installed `/Applications` app bundle; remaining blockers are external sign-off items (physical AGX Thor bring-up rehearsal, Docker-backed integration rerun when Docker is available, and a real Developer ID/notarized tag release)
+## Status: repo-side v0.1.0 release hardening now includes a packaged in-app updater, local update-manifest support, an installed `/Applications` app bundle, and a freshly packaged `THORApp.app` that was rechecked against both live Docker Jetson sims; remaining blockers are external sign-off items (physical AGX Thor bring-up rehearsal and a real Developer ID/notarized tag release)
 
 ## Stats
 - 100+ files, 19,800+ lines
 - Current no-Docker release gate passes locally across database, pipeline, registry, quick-start, readiness, and CLI smoke coverage
-- Docker-backed simulator integration remains available via `make test` when Docker Desktop is running
+- Docker-backed simulator integration has been rerun successfully again via `make test`
 - Registry trust, setup wizard/doctor, readiness gating, ROS2 workbench, Sensor Cockpit, typed recipes, diagnostics bundles, and simulator parity are now present across app, agent, CLI, and tests
 
 ## v0.1.0 Release Checklist
@@ -31,20 +31,59 @@
 
 ## Release Confidence
 - Repo-side install/update/release/docs paths are green locally
-- External release sign-off is still pending on hardware, Docker-backed integration rerun, and Apple-notarized distribution
+- Live launched-app inspection now confirms the packaged app reconnects to both local sims and repopulates the data-heavy pages after relaunch
+- External release sign-off is still pending on physical hardware rehearsal and Apple-notarized distribution
 
 ## This Session — 2026-04-13
+- Added an operator-facing workspace preference layer so Docker can be muted instead of treated like a mandatory part of every THOR session:
+  - `Settings > General > Workspace` now includes `Show Docker and simulator tools`
+  - disabling that preference removes the Docker tab from the device sidebar, hides Docker capability/readiness noise from the main operator surfaces, and drops the simulator-first suggested flow from onboarding/setup
+  - the underlying Docker functionality still exists and can be re-enabled instantly from settings when simulator or container-runtime work is needed again
+- Added built-in tab help so operators can understand what each page is for without guessing:
+  - every `DetailTab` now carries centralized help metadata with a short summary, a `Start Here` checklist, and a `Look For` checklist
+  - device pages now expose a reusable in-app help card plus a toolbar `Show Help` / `Hide Help` control
+  - `Settings > General > Workspace` now includes `Open tabs with help visible` so teams can decide whether help should appear by default or only on demand
+- Added regression coverage for the new operator preferences/help surface:
+  - default Docker visibility preference
+  - default tab-guidance preference
+  - completeness coverage to ensure every device tab continues to ship with help content
+- Performed a real launched-app inspection against the live Docker Jetson sims on ports `8470` and `8471` and found a relaunch regression:
+  - persisted `.connected` state survived app relaunch, but the in-memory `AgentClient` cache did not
+  - that left Overview looking connected while System, Docker, ROS2, and downstream gated pages could come up stale or empty until a manual reconnect happened
+- Fixed the relaunch path in `AppState` so devices that were previously connected, or are marked auto-connect, restore a live `AgentClient` on load using the configured simulator/local agent port
+- Added targeted regression coverage for the reconnect behavior in `Tests/THORTests/AppStateConnectionRestoreTests.swift`
+- Replaced the invalid SF Symbol name `gpu` with `memorychip` so the GPU pages stop emitting the runtime symbol-resolution error during live navigation
+- Repackaged `THORApp.app` and re-verified the live UI after the fix:
+  - full Thor device tab sweep completed in the launched app
+  - key Orin tabs (`Overview`, `System`, `Docker`, `ROS2`) also verified in the launched app
+  - the packaged app now repopulates System, Docker, ROS2, ANIMA gating, storage, and readiness data immediately after relaunch
+  - Sensor Cockpit image preview in the simulator still renders as a white tile because the current `camera-front` stream payload is a blank 2×2 JPEG placeholder from the sim, not because the app failed to decode or display the image
 - Tightened the registry profile workspace so the flow is easier to understand during real operator use:
   - replaced the dense setup checklist with a readiness summary grid and a single next-action card
   - clarified that custom CA import is optional for normal HTTPS registries instead of treating it like a required step
   - split the workspace into clearer operator-facing sections for connection, TLS trust, Mac validation, and Jetson rollout
   - upgraded the saved-profile sidebar rows with validation/auth/namespace cues so profiles are easier to scan
   - moved transient registry errors into a visible detail-banner instead of leaving them buried in the sidebar
+- Closed the add-device onboarding gap for brand-new hardware:
+  - `Add Device` now starts with an explicit staged choice between `Brand-New Device` and `Already Reachable` instead of assuming the target is already initialized and reachable
+  - the brand-new flow now tells the operator to start on the USB console, complete OEM-config, record the real username, and then choose the first network handoff
+  - the first network handoff is now explicit inside the sheet: either `USB Tether` for the common `192.168.55.1` path or `Ethernet Later` for wired enrollment after bring-up
+  - the sheet exposes the built-in AGX Thor first-boot guide, host-detection status for setup devices/keys, and path-specific shortcuts for USB-tether defaults or Ethernet enrollment prep
+- Polished the runtime operator path after inspecting the live macOS app:
+  - THOR now reopens or creates the main window on launch instead of sometimes starting as a foreground app with no visible main window
+  - the AGX Thor quick-start sheet now exposes an explicit `Back` button so operators can return to the Add Device flow without closing the whole context manually
 - Revalidated this pass with:
   - `make build`
   - `make test-unit`
+  - `make test`
+  - `SIGNING_MODE=adhoc Scripts/package_app.sh release`
+  - `Scripts/dev/swiftw run thorctl health 8470`
+  - `Scripts/dev/swiftw run thorctl health 8471`
+  - live packaged-app inspection across the device pages
+  - relaunch of the freshly packaged `THORApp.app` after the Docker-visibility/help changes
 - Validation still pending after this pass:
-  - rerun `make test` once Docker Desktop is available on the host
+  - rehearse the guided AGX Thor first-boot flow on physical hardware
+  - run a real Developer ID + notarization tag release with Apple credentials and published release assets
 
 ## This Session — 2026-04-12
 - Added a seventh production-hardening pass focused on application self-update and install ergonomics:

@@ -34,7 +34,7 @@ struct OnboardingView: View {
         }
         .sheet(isPresented: $showingThorQuickStart) {
             ScrollView {
-                JetsonThorQuickStartView(device: nil)
+                JetsonThorQuickStartView(device: nil, showsBackButton: true)
                     .padding(24)
                     .frame(minWidth: 760)
             }
